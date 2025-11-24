@@ -81,7 +81,7 @@ def process_stream(vid_path: str, cam_id: int, lock, db_lock=None, Pid=None):
     
     
     client = QdrantClient("http://localhost:6333")
-    reid_weights = Path(r"C:\Users\hthek\Downloads\tracking\osnet_x0_25_msmt17.pt")
+    reid_weights = Path(r"/home/mohammed/Documents/GitHub/Tracking/osnet_x0_25_msmt17.pt")
     osnet = auto_backend.ReidAutoBackend(
                 weights=reid_weights, device=device, half=False
             ).model.model.to(device)
@@ -182,13 +182,13 @@ if __name__ == "__main__":
 
     
     t1 = Process(target=process_stream
-                 ,kwargs={"vid_path": r"C:\Users\hthek\OneDrive\Desktop\Collected Dataset\Vid_3_cam_0.mp4"
+                 ,kwargs={"vid_path": r"/home/mohammed/Desktop/Mohammed/UPM - Term 7/AI 491 - Capstone/data/Videos/Vid_1.mp4"
                          ,"cam_id":0
                         ,"lock":lock
                         ,"db_lock":db_lock
                         ,"Pid":Pid})
     t2 = Process(target=process_stream
-                 ,kwargs={"vid_path": r"C:\Users\hthek\OneDrive\Desktop\Collected Dataset\Vid_3_cam_1.mp4"
+                 ,kwargs={"vid_path": r"/home/mohammed/Desktop/Mohammed/UPM - Term 7/AI 491 - Capstone/data/Videos/Vid_2.mp4"
                         ,"cam_id": 1
                         ,"lock":lock
                         ,"db_lock":db_lock
