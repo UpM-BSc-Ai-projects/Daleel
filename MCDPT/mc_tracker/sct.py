@@ -11,6 +11,8 @@ THE_BIGGEST_DISTANCE = 2.
 
 TrackedObj = namedtuple('TrackedObj', ['rect', 'label', 'display'])
 
+TrackedObjFeat = namedtuple('TrackedObjFeat', ['rect', 'track_id', 'cam_id', 'display', 'feats'])
+
 def euclidean_distance(x, y, squared=False):
     x = np.asarray(x)
     y = np.asarray(y)
@@ -645,5 +647,18 @@ class SingleCameraTracker:
                                        f'{track.cam_id}-{track.id}',
                                        len(track) > self.time_window
                                        )
+                            )
+        return objs
+    
+    def get_tracked_objects_feat(self):
+        objs = []
+        for track in self.tracks:
+            if track.get_end_time() == self.time - 1:
+                objs.append(TrackedObjFeat(track.get_last_box(),
+                                        f'{track.id}',
+                                        f'{track.cam_id}',
+                                        len(track) > self.time_window,
+                                        track.get_all_features()
+                                        )
                             )
         return objs

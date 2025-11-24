@@ -263,6 +263,8 @@ class MultiCameraTracker:
 
     def get_tracked_objects(self):
         return self.sct.get_tracked_objects()
+    def get_tracked_objects_feat(self):
+        return self.sct.get_tracked_objects_feat()
 
 
 class Messages:
