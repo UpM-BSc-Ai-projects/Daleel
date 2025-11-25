@@ -1,6 +1,6 @@
 # %%
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, IsNullCondition
 import cv2
 import torch
 import clip
@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import List, Tuple, Union, Dict
 # from boxmot.appearance.reid_auto_backend import ReidAutoBackend
 from boxmot.appearance.reid.auto_backend import ReidAutoBackend
+import os
+from transformers import pipeline
 from helpers import extract_frame_by_count, get_person_crop_from_coords
+
 
 # %% [markdown]
 # ## Config
@@ -37,6 +40,7 @@ VIDEO_LOCATION_MAPPING = {
     2: r'/home/mohammed/Desktop/Mohammed/UPM - Term 7/AI 491 - Capstone/data/Videos/Vid_3.mp4'
 }
 
+CROP_SAVE_DIRECTORY = r"C:\Users\themi\PycharmProjects\Capstone\saved_crops_qdrant"
 osnet_weights = Path(r"/home/mohammed/Documents/GitHub/Tracking/osnet_x0_25_msmt17.pt")
 
 # Dictionary mapping CLIP model names to embedding dimensions
@@ -58,9 +62,7 @@ EMBEDDING_SIZE = CLIP_EMBEDDING_SIZES[CLIP_MODEL_NAME]
 
 ELDERLY_THRESHOLD = 0.6
 DISABLED_THRESHOLD = 0.6
-# print(f"Using CLIP model: {CLIP_MODEL_NAME}")
-# print(f"Embedding size: {EMBEDDING_SIZE}")
-
+EMOTION_THRESHOLD = 0.6  # Min confidence for "sad", "fear", or "angry" -> potentiallyLost = True
 
 # %% [markdown]
 # ## Reading & Accessing Existing QDrant DB
@@ -276,6 +278,55 @@ class CLIP:
 REID_SYSTEM = CLIP(model_name=CLIP_MODEL_NAME)
 
 # %% [markdown]
+# ## Load emotion classification model
+
+# %%
+def load_emotion_model(device_num=0):
+    """
+    Loads the emotion classification model once.
+    """
+    print("Loading emotion detection model...")
+    emotion_clf = pipeline(
+        "image-classification", 
+        model="trpakov/vit-face-expression", 
+        device=device_num if device_num >= 0 and torch.cuda.is_available() else -1
+    )
+    print("Emotion model loaded successfully.")
+    return emotion_clf
+
+# %% [markdown]
+# ### Functions for determing emotion & lost status
+
+# %%
+def run_emotion_model(crop_image, emotion_clf):
+    """
+    Runs emotion detection on a cropped PIL Image.
+    Returns the top prediction as a dict with 'label' and 'score'.
+    """
+    try:
+        pred = emotion_clf(crop_image, top_k=1)
+        if pred:
+            return pred[0]  # {'label': '...', 'score': ...}
+    except Exception as e:
+        print(f"  Error in emotion model: {e}")
+    
+    return {"label": "unknown", "score": 0.0}
+
+# %%
+
+def is_potentially_lost(emotion_result, threshold=0.6):
+    """
+    Determines if a person is potentially lost based on emotion.
+    Returns True if emotion is "sad" or "fear" with confidence above threshold.
+    """
+    label = emotion_result['label'].lower()
+    score = emotion_result['score']
+    
+    if label in ["sad", "fear","angry"] and score > threshold:
+        return True
+    return False
+
+# %% [markdown]
 # ## Creating a Qdrant collection (table) for the text embeddings
 
 # %%
@@ -436,6 +487,19 @@ def get_osnet_embedding(pil_image):
 
 # %%
 def main():
+    # Create crop save directory
+    os.makedirs(CROP_SAVE_DIRECTORY, exist_ok=True)
+    
+    # 2. Load emotion model
+    try:
+        emotion_clf = load_emotion_model(device_num=0)
+    except Exception as e:
+        print(f"FATAL: Could not load emotion model: {e}")
+        return
+    
+    # 3. Get records where potentiallyLost is None
+    print(f"\nQuerying records where 'potentiallyLost' is None...")
+    
     all_records = client.scroll(
         collection_name=COLLECTION_NAME,
         with_payload=True,
@@ -484,31 +548,48 @@ def main():
             print("  Skipping record.")
             continue
         
-        # D. Create an embedding for the person
+        # D. Save crop (optional, for debugging)
+        try:
+            save_path = os.path.join(CROP_SAVE_DIRECTORY, f"crop_id_{record.id}.jpg")
+            crop_image.save(save_path)
+            print(f"  Saved crop to: {save_path}")
+        except Exception as e:
+            print(f"  Warning: Could not save crop: {e}")
+            
+            
+        # E. Run emotion model
+        print("  Running emotion analysis...")
+        emotion_result = run_emotion_model(crop_image, emotion_clf)
+        print(f"  Emotion Result: {emotion_result}")
+        
+        # F. Determine potentiallyLost status
+        is_lost = is_potentially_lost(emotion_result, EMOTION_THRESHOLD)
+        
+        # G. Create an embedding for the person
         clip_person_emb = REID_SYSTEM.encode_person_crop(crop_image).to('cpu').numpy()
         print(clip_person_emb.shape)
         
         osnet_person_emb = get_osnet_embedding(crop_image)
         
-        # E. Determine Elderly status
+        # H. Determine Elderly status
         is_elderly = determine_elderly(clip_person_emb, ELDERLY_THRESHOLD)
         
-        # F. Determine Disabled status
+        # I. Determine Disabled status
         is_disabled = determine_disabled(clip_person_emb, DISABLED_THRESHOLD)
         
         
-        # G. Update Qdrant record
+        # J. Update Qdrant record
         try:
             client.set_payload(
                 collection_name=COLLECTION_NAME,
-                payload={"isElderly": is_elderly, "isDisabled": is_disabled},
+                payload={"isElderly": is_elderly, "isDisabled": is_disabled, "potentiallyLost": is_lost},
                 points=[record.id]
             )
-            print(f"  ✓ Updated isElderly = {is_elderly} and isDisabled = {is_disabled} for Record ID: {record.id}")
+            print(f"  ✓ Updated isElderly = {is_elderly} and isDisabled = {is_disabled} and potentiallyLost = {is_lost} for Record ID: {record.id}")
         except Exception as e:
             print(f"  Error updating record: {e}")
             
-        # H. Add record to CLIP & OSNet collections
+        # K. Add record to CLIP & OSNet collections
         clip_points = [PointStruct(id=record.id, vector=clip_person_emb, payload={"Pid": pid})]
         osnet_points = [PointStruct(id=record.id, vector=osnet_person_emb, payload={"Pid": pid})]
         
