@@ -63,6 +63,30 @@ class CLIP:
             
         return torch.cat(image_features, dim=0)
     
+    def encode_single_image(self, image: Union[Image.Image, np.ndarray, torch.Tensor]) -> torch.Tensor:
+        """
+        Encode a single person image into a feature vector.
+        
+        Args:
+            image: Input image (PIL cropped person image)
+            
+        Returns:
+            Normalized image feature tensor of shape (1, feature_dim)
+        """
+        try:
+            # Preprocess and encode
+            image_input = self.preprocess(image).unsqueeze(0).to(self.device)
+            
+            with torch.no_grad():
+                features = self.model.encode_image(image_input)
+                features = features / features.norm(dim=-1, keepdim=True)  # Normalize
+            
+            return features
+            
+        except Exception as e:
+            print(f"Error processing single image: {e}")
+            raise ValueError(f"Failed to encode single image: {e}")
+    
     def encode_text(self, text_descriptions: List[str]) -> torch.Tensor:
         """
         Encode text descriptions into feature vectors.
