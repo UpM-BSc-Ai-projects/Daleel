@@ -9,9 +9,10 @@ from .deep_sort_plus import nn_matching
 from .deep_sort_plus.detection import Detection
 from .deep_sort_plus.tracker import Tracker as dsTracker
 from .deep_sort_plus.track import cosine_distance, THE_BIGGEST_DISTANCE
-
+import torch
 
 TrackedObj = namedtuple('TrackedObj', ['rect', 'label', 'display'])
+TrackedObjFeat = namedtuple('TrackedObjFeat', ['rect', 'track_id', 'display','feats',"track"])
 
 
 class MCT_track(object):
@@ -21,6 +22,8 @@ class MCT_track(object):
         self.start_time = start_time
         self.f_avg = f_avg
         self.f_clust = f_clust
+
+        
 
 
 class DeepSortPlus(object):
@@ -108,6 +111,19 @@ class DeepSortPlus(object):
                                    track.hits > self.time_window
                                   )
                         )
+    def get_tracked_objects_feat(self):
+        objs = []
+        for track in self.tracker.tracks:
+            if track.time_since_update > 0:
+                continue
+            objs.append(TrackedObjFeat(track.to_tlbr().astype(int),
+                                   f'{track.track_id}-{track.cam_id}',
+                                   track.hits > self.time_window,
+                                   track.get_all_features(),
+                                   track
+                                  )
+                        )
+
 
         for track in self.tracker.deleted_tracks:
             self.finished_tracks.append(track.track_id)

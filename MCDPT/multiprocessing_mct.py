@@ -4,7 +4,7 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 from multiprocessing import Process,Lock,Value
-from mc_tracker import mct,sct
+from deep_sort_plus.deepsortplus import DeepSortPlus
 from boxmot import BoostTrack, BotSort, StrongSort
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct,FieldCondition, MatchValue, Filter
@@ -33,15 +33,24 @@ print(device)
 print(torch.cuda.get_device_name(0)) 
 
 
+# sct_config = {
+#     'match_threshold': 0.4,
+#     'n_clusters': 10,
+#     'clust_init_dis_thresh': 0.2,
+#     'time_window': 7,
+#     'iou_dist_thresh' : 0.8,
+#     'merge_thresh':0.4,
+#     'rectify_thresh':0.3,
+#     'budget': 20
+# }
 sct_config = {
-    'match_threshold': 0.4,
-    'n_clusters': 10,
+    'num_clusters': 10,
     'clust_init_dis_thresh': 0.2,
     'time_window': 7,
-    'iou_dist_thresh' : 0.8,
-    'merge_thresh':0.4,
-    'rectify_thresh':0.8,
-    'budget': 20
+    'merge_thresh':0.6,
+    'rectify_thresh':0.3,
+    'stable_time_thresh':5
+
 }
 
 
@@ -50,9 +59,8 @@ sct_config = {
 
 
 
-
 class OSNet(nn.Module):
-    def __init__(self, model, mode="sc"):
+    def __init__(self, model):
         
         super().__init__()
         self.model=model.cuda()
@@ -90,7 +98,7 @@ def process_stream(vid_path: str, cam_id: int, lock, db_lock=None, Pid=None):
     video_path = vid_path
     cap = cv2.VideoCapture(video_path)
     count=0
-    tracker = mct.MultiCameraTracker(reid_model=reid_model,cam_id=cam_id,sct_config=sct_config)
+    tracker = DeepSortPlus(reid_model=reid_model,cam_id=cam_id,global_match_thresh=0.4,sct_config=sct_config)
 
     with torch.inference_mode():
         while True:
@@ -98,13 +106,14 @@ def process_stream(vid_path: str, cam_id: int, lock, db_lock=None, Pid=None):
             if not success:
                 break
 
-     
+            
+
+
             # Run detection
             if count%2==0:
                 with lock:
                     torch.cuda.synchronize()
                     output = detector.predict(frame,verbose=False)[0].boxes
-                    # print("process "+str(cam_id))
                     torch.cuda.synchronize()
 
                 labels = output.cls.cpu().numpy()
@@ -113,13 +122,10 @@ def process_stream(vid_path: str, cam_id: int, lock, db_lock=None, Pid=None):
                 scores = scores[only_people]
                 keep = scores >= 0.5
                 
-
-
             
                 boxes = output.xyxy.cpu().numpy()[only_people][keep].astype(np.int32)
                 
             
-
             with lock:
                 torch.cuda.synchronize()
                 tracker.process(frame,[boxes])
@@ -127,17 +133,20 @@ def process_stream(vid_path: str, cam_id: int, lock, db_lock=None, Pid=None):
             for obj in tracker.get_tracked_objects_feat():
                 if obj.display:
                     x1,y1,x2,y2 = map(int,obj.rect)
-                    id = obj.track_id
+                    global_id = obj.track_id
                     
                     max_ppl = 15
                     norm = mpl.colors.Normalize(vmin=0, vmax=max_ppl)
                     cmap = cm.hot
                     m = cm.ScalarMappable(norm=norm, cmap=cmap)
-                    color_num = max_ppl - (int(id) % max_ppl)
+                    color_num = max_ppl - (int(global_id.split("-")[0]) % max_ppl)
                     color = m.to_rgba(color_num)[:3]*np.array([255]).astype(np.int32)
+
                     
+                    
+
                     cv2.rectangle(frame,(x1,y1),(x2,y2),color=color,thickness=2)
-                    cv2.putText(frame,"id: "+id,(x1,y1-5),fontFace=cv2.FONT_HERSHEY_COMPLEX,fontScale=0.5,color=color)
+                    cv2.putText(frame,"id: "+global_id,(x1,y1-5),fontFace=cv2.FONT_HERSHEY_COMPLEX,fontScale=0.5,color=color)
                     with db_lock:
 
                         points = []
@@ -146,17 +155,19 @@ def process_stream(vid_path: str, cam_id: int, lock, db_lock=None, Pid=None):
                                     PointStruct(
                                         id = Pid.value + i,
                                         vector = feat,
-                                        payload = {"Pid": obj.track_id ,"coords" : [x1,y1,x2,y2],
-                                                   "cam_id":cam_id, "frame_count":count},
+                                        payload = {"Pid": global_id ,"coords" : [x1,y1,x2,y2],
+                                                   "cam_id":cam_id, "frame_count":count,"cross_cam":obj.track.cross_camera_track},
                                                 )
                                         )
                             
-                        Pid.value+=len(points)
-                    client.upsert(
+                        client.upsert(
                         collection_name="stream",
                         points = points
                                     )
+                        
             # out.write(frame)
+                        Pid.value+=len(points)
+
             
             count+=1
             
@@ -171,7 +182,7 @@ def process_stream(vid_path: str, cam_id: int, lock, db_lock=None, Pid=None):
           
     # Clean up
     cap.release()
-    cv2.destroyAllWindows()
+    # cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
@@ -180,7 +191,7 @@ if __name__ == "__main__":
     db_lock = Lock()
     Pid = Value('i',0)
 
-    
+
     t1 = Process(target=process_stream
                  ,kwargs={"vid_path": r"C:\Users\hthek\OneDrive\Desktop\Collected Dataset\Vid_3_cam_0.mp4"
                          ,"cam_id":0

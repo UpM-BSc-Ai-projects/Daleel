@@ -354,3 +354,19 @@ class Track:
     def is_stable(self):
         return self.counts >= self.stable_time_thresh \
                and len(self.f_avg) >= self.rectify_length_thresh
+    
+    def get_all_features(self):
+        track_all_features = []
+        if self.f_avg.is_valid():
+            recent_features = self.f_queue
+            track_all_features = track_all_features + recent_features
+            avg_features = self.f_avg.get_avg()
+            track_all_features.append(avg_features)
+            cluster_features = self.f_clust.get_clusters_matrix()
+            for i in range(cluster_features.shape[0]):
+                track_all_features.append(cluster_features[i])
+        else:
+            recent_features = self.f_queue
+            track_all_features = track_all_features + recent_features
+        
+        return track_all_features
