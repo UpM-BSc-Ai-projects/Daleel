@@ -4,7 +4,7 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 from multiprocessing import Process,Lock,Value
-from deep_sort_plus.deepsortplus import DeepSortPlus
+from .deep_sort_plus.deepsortplus import DeepSortPlus
 from boxmot import BoostTrack, BotSort, StrongSort
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct,FieldCondition, MatchValue, Filter
@@ -89,7 +89,7 @@ def process_stream(vid_path: str, cam_id: int, lock, db_lock=None, Pid=None):
     
     
     client = QdrantClient("http://localhost:6333")
-    reid_weights = Path(r"/home/mohammed/Documents/GitHub/Tracking/osnet_x0_25_msmt17.pt")
+    reid_weights = Path(r"C:\Users\hthek\Downloads\Capstone-AI-SE\MCDPT\osnet_x0_25_msmt17.pt")
     osnet = auto_backend.ReidAutoBackend(
                 weights=reid_weights, device=device, half=False
             ).model.model.to(device)
@@ -131,7 +131,7 @@ def process_stream(vid_path: str, cam_id: int, lock, db_lock=None, Pid=None):
                 tracker.process(frame,[boxes])
                 torch.cuda.synchronize()
             for obj in tracker.get_tracked_objects_feat():
-                if obj.display:
+                if obj.display and obj.feats:
                     x1,y1,x2,y2 = map(int,obj.rect)
                     global_id = obj.track_id
                     
@@ -182,7 +182,7 @@ def process_stream(vid_path: str, cam_id: int, lock, db_lock=None, Pid=None):
           
     # Clean up
     cap.release()
-    # cv2.destroyAllWindows()
+    cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
@@ -193,13 +193,13 @@ if __name__ == "__main__":
 
 
     t1 = Process(target=process_stream
-                 ,kwargs={"vid_path": r"/home/mohammed/Desktop/Mohammed/UPM - Term 7/AI 491 - Capstone/data/Videos/Vid_1.mp4"
+                 ,kwargs={"vid_path": r"C:\Users\hthek\OneDrive\Desktop\Collected Dataset\Vid_3_cam_0.mp4"
                          ,"cam_id":0
                         ,"lock":lock
                         ,"db_lock":db_lock
                         ,"Pid":Pid})
     t2 = Process(target=process_stream
-                 ,kwargs={"vid_path": r"/home/mohammed/Desktop/Mohammed/UPM - Term 7/AI 491 - Capstone/data/Videos/Vid_2.mp4"
+                 ,kwargs={"vid_path": r"C:\Users\hthek\OneDrive\Desktop\Collected Dataset\Vid_3_cam_1.mp4"
                         ,"cam_id": 1
                         ,"lock":lock
                         ,"db_lock":db_lock

@@ -8,6 +8,7 @@ import os
 import matplotlib.pyplot as plt
 
 
+
 class CLIP:
     """
     CLIP-based Person Re-Identification system.
@@ -63,7 +64,7 @@ class CLIP:
             
         return torch.cat(image_features, dim=0)
     
-    def encode_single_image(self, image: Union[Image.Image, np.ndarray, torch.Tensor]) -> torch.Tensor:
+    def encode_person_crop(self, image: Union[Image.Image, np.ndarray, torch.Tensor]) -> torch.Tensor:
         """
         Encode a single person image into a feature vector.
         
@@ -80,11 +81,11 @@ class CLIP:
             with torch.no_grad():
                 features = self.model.encode_image(image_input)
                 features = features / features.norm(dim=-1, keepdim=True)  # Normalize
+                features = features.squeeze(0)
             
             return features
             
         except Exception as e:
-            print(f"Error processing single image: {e}")
             raise ValueError(f"Failed to encode single image: {e}")
     
     def encode_text(self, text_descriptions: List[str]) -> torch.Tensor:
@@ -187,117 +188,3 @@ class CLIP:
             ]
         
         return results
-
-
-def visualize_batch_results(batch_results: Dict[str, List[Tuple[str, float]]], top_k: int = 5):
-    """
-    Visualize top-k results from batch queries using matplotlib.
-    
-    Args:
-        batch_results: Dictionary mapping queries to list of (image_path, score) tuples
-        top_k: Number of top results to display per query
-    """
-    num_queries = len(batch_results)
-    fig, axes = plt.subplots(num_queries, top_k, figsize=(top_k * 3, num_queries * 3))
-    
-    # Handle single query case
-    if num_queries == 1:
-        axes = axes.reshape(1, -1)
-    
-    for i, (query, matches) in enumerate(batch_results.items()):
-        for j, (img_path, score) in enumerate(matches[:top_k]):
-            ax = axes[i, j] if num_queries > 1 else axes[0, j]
-            
-            # Load and display image
-            img = Image.open(img_path)
-            ax.imshow(img)
-            ax.axis('off')
-            
-            # Add title with score
-            title = f"{Path(img_path).name}\nScore: {score:.3f}"
-            ax.set_title(title, fontsize=10)
-        
-        # Add query text as ylabel on first column
-        if num_queries > 1:
-            axes[i, 0].set_ylabel(f"'{query}'", fontsize=11, rotation=0, 
-                                   ha='right', va='center', labelpad=40)
-        else:
-            axes[0, 0].set_ylabel(f"'{query}'", fontsize=11, rotation=0, 
-                                   ha='right', va='center', labelpad=40)
-    
-    plt.tight_layout()
-    plt.show()
-
-
-# Config & Initialization of CLIP ReID
-reid_system = CLIP(model_name="ViT-B/32")
-
-gallery_dir = r"/home/mohammed/Desktop/Mohammed/UPM - Term 7/AI 491 - Capstone/Capstone.v4-full-annotated.yolov8/cropped/train+emo"
-TOP_K = 100
-
-# Collect images with multiple extensions
-image_paths = []
-for ext in ["*.jpg", "*.png", "*.jpeg", "*.JPG", "*.PNG", "*.JPEG"]:
-    image_paths.extend(list(Path(gallery_dir).glob(ext)))
-
-if not image_paths:
-    print("No images found! Please update the gallery_dir path.")
-    sys.exit(1)
-
-
-# # Example: Single query
-
-# # Text description of person to find
-# query = "a person with a white shirt and red pants"
-
-# # Retrieve top matches
-# results = reid_system.retrieve(
-#     text_query=query,
-#     image_paths=image_paths,
-#     top_k=10,
-#     threshold=0.25  # Optional: only return matches with similarity > 0.25
-# )
-
-# # Display results
-# print(f"\nTop matches for '{query}':\n")
-# for rank, (img_path, score) in enumerate(results, 1):
-#     print(f"{rank}. {Path(img_path).name} - Similarity: {score:.4f}")
-
-
-# Multiple queries
-# queries = [
-#     "a person in a wheel chair",
-#     "an elderly person over 60 years old",
-#     "An adult male with dark hair wearing dark navy blue shirt with dark jeans or trousers. He's also wearing a wristwatch on his left wrist.",
-#     "An adult black male, with short dark hair, and wearing thin-framed rectangular glasses"
-# ]
-queries = [
-    "An afraid person",
-    "A person who is afraid",
-    "An angry person",
-    "A person who is angry",
-    "A worried person",
-    "A sad person",
-    "A distressed person",
-]
-
-batch_results = reid_system.batch_retrieve(
-    text_queries=queries,
-    image_paths=image_paths,
-    top_k=TOP_K,
-    threshold=0.2
-)
-
-print("\n" + "="*60)
-print("Batch query results:")
-print("="*60)
-for query, matches in batch_results.items():
-    print(f"\nQuery: '{query}'")
-    for rank, (img_path, score) in enumerate(matches, 1):
-        print(f"  {rank}. {Path(img_path).name} - {score:.4f}")
-
-
-# Visualize results
-visualize_batch_results(batch_results, top_k=TOP_K)
-
-

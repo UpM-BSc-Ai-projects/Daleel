@@ -119,7 +119,7 @@ class DeepSortPlus(object):
             objs.append(TrackedObjFeat(track.to_tlbr().astype(int),
                                    f'{track.track_id}-{track.cam_id}',
                                    track.hits > self.time_window,
-                                   track.get_all_features(),
+                                   track.get_new_features(),
                                    track
                                   )
                         )

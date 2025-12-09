@@ -201,6 +201,7 @@ class Track:
         self.age = 1
         self.time_since_update = 0
         self.counts = 0
+        self.feat_count = 0
 
         self.state = TrackState.Tentative
         self.f_queue = []
@@ -370,3 +371,12 @@ class Track:
             track_all_features = track_all_features + recent_features
         
         return track_all_features
+    def get_new_features(self):
+        all_features = self.get_all_features()
+        
+        new_features = all_features[self.feat_count:]
+        
+        self.feat_count = len(all_features)-1
+
+        return new_features
+
