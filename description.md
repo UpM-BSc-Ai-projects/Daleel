@@ -1,5 +1,78 @@
 # AI-Powered Lost Persons Management System - Complete Technical Architecture
 
+## Table of Contents
+
+- [AI-Powered Lost Persons Management System - Complete Technical Architecture](#ai-powered-lost-persons-management-system---complete-technical-architecture)
+- [System Overview](#system-overview)
+
+- [PART 1: System Initialization Sequence](#part-1-system-initialization-sequence)
+  - [1.1 Application Entry Point: Streamlit App Initialization](#11-application-entry-point-streamlit-app-initialization)
+  - [1.2 Database Schema Architecture](#12-database-schema-architecture)
+  - [1.3 Vector Database Collections](#13-vector-database-collections)
+
+- [PART 2: Video Stream Processing Pipeline](#part-2-video-stream-processing-pipeline)
+  - [2.1 Stream Processing Initiation](#21-stream-processing-initiation)
+  - [2.2 Deep Stream Processing: MCDPT Module](#22-deep-stream-processing-mcdpt-module)
+
+- [PART 3: Embedding Processing Pipeline](#part-3-embedding-processing-pipeline)
+  - [3.1 Embedding Worker Process](#31-embedding-worker-process)
+  - [3.2 SQL Synchronization Worker](#32-sql-synchronization-worker)
+
+- [PART 4: Streamlit Frontend Pages](#part-4-streamlit-frontend-pages)
+  - [4.1 Page Structure](#41-page-structure)
+  - [4.2 CRUD Operations](#42-crud-operations)
+
+- [PART 5: CLIP Module – Text-Based Person Retrieval](#part-5-clip-module---text-based-person-retrieval)
+  - [5.1 CLIP Class](#51-clip-class)
+
+- [PART 6: Data Flow and System States](#part-6-data-flow-and-system-states)
+  - [6.1 Complete Data Flow Diagram](#61-complete-data-flow-diagram)
+  - [6.2 System States and Transitions](#62-system-states-and-transitions)
+  - [6.3 Concurrency and Synchronization](#63-concurrency-and-synchronization)
+
+- [PART 7: Key Algorithms and Models](#part-7-key-algorithms-and-models)
+  - [7.1 Person Detection: YOLO RT-DETR-L](#71-person-detection-yolo-rt-detr-l)
+  - [7.2 Person Re-Identification: OSNet](#72-person-re-identification-osnet)
+  - [7.3 Multi-Camera Tracking: DeepSort+](#73-multi-camera-tracking-deepsort)
+  - [7.4 Emotion Detection: ViT-Face-Expression](#74-emotion-detection-vit-face-expression)
+  - [7.5 Vision-Language Embeddings: CLIP](#75-vision-language-embeddings-clip)
+  - [7.6 Attribute Detection: Similarity-based Classification](#76-attribute-detection-similarity-based-classification)
+
+- [PART 8: Database Operations Flow](#part-8-database-operations-flow)
+  - [8.1 Person Registration Flow](#81-person-registration-flow)
+  - [8.2 Detection-to-Database Flow](#82-detection-to-database-flow)
+  - [8.3 Search Flow](#83-search-flow)
+
+- [PART 9: Configuration and Parameters](#part-9-configuration-and-parameters)
+  - [9.1 Detection Parameters](#91-detection-parameters)
+  - [9.2 Embedding Parameters](#92-embedding-parameters)
+  - [9.3 Processing Parameters](#93-processing-parameters)
+
+- [PART 10: Error Handling and Edge Cases](#part-10-error-handling-and-edge-cases)
+  - [10.1 Video Processing Edge Cases](#101-video-processing-edge-cases)
+  - [10.2 Database Edge Cases](#102-database-edge-cases)
+  - [10.3 Embedding Edge Cases](#103-embedding-edge-cases)
+
+- [PART 11: Performance Considerations](#part-11-performance-considerations)
+  - [11.1 GPU Utilization](#111-gpu-utilization)
+  - [11.2 Memory Management](#112-memory-management)
+  - [11.3 Scalability Limitations](#113-scalability-limitations)
+
+- [PART 12: Deployment and Setup](#part-12-deployment-and-setup)
+  - [12.1 Required Services](#121-required-services)
+  - [12.2 File Structure](#122-file-structure)
+  - [12.3 Startup Command](#123-startup-command)
+
+- [PART 13: Summary of System Flow](#part-13-summary-of-system-flow)
+
+- [PART 14: Key Technical Insights](#part-14-key-technical-insights)
+  - [14.1 Why This Architecture?](#141-why-this-architecture)
+  - [14.2 Bottlenecks](#142-bottlenecks)
+  - [14.3 Future Improvements](#143-future-improvements)
+
+- [Conclusion](#conclusion)
+
+
 ## System Overview
 
 This is a comprehensive AI-powered security support system designed for the Prophet's Mosque (Al-Masjid An-Nabawi) to identify, locate, and manage lost or disoriented individuals in real-time using advanced computer vision, deep learning, and person re-identification technologies.
