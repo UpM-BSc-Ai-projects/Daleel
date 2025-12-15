@@ -200,7 +200,7 @@ def get_osnet_embedding(pil_image_path):
 
     # Initialize model
     model = ReidAutoBackend(
-        weights=r"C:\Users\hthek\Downloads\Capstone-AI-SE\MCDPT\osnet_x0_25_msmt17.pt",
+        weights=r"C:\Users\themi\PycharmProjects\Capstone-AI-SE\MCDPT\osnet_x0_25_msmt17.pt",
         device=DEVICE,
         half=False
     )
