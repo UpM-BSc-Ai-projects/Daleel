@@ -7,13 +7,14 @@ from transformers import pipeline
 from Embedding_worker.helpers import extract_frame_by_count, get_person_crop_from_coords
 from CLIP.clip_v2 import CLIP
 from time import sleep
-from database import SessionLocal
-from models import CameraDetectedPerson
+from Streamlit.database import SessionLocal
+from Streamlit.models import CameraDetectedPerson
 # from crud import update_camera_detected_person
-from crud import *
+from Streamlit.crud import *
 from boxmot.appearance.reid.auto_backend import ReidAutoBackend
 from PIL import Image
 from torchvision import transforms
+import json
 
 
 DEVICE = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -313,7 +314,34 @@ def lost_person_search(lost_persons):
 
             all_person_results[pid] = final_results
 
-    return all_person_results
+    # Convert results to JSON-serializable format (with more details)
+    json_results = {}
+    for person_id, results in all_person_results.items():
+        json_results[str(person_id)] = {
+            "person_id": person_id,
+            "total_matches": len(results),
+            "matches": [
+                {
+                    "rank": idx + 1,
+                    "qdrant_id": res.id,
+                    "confidence_score": float(res.score),
+                    "detected_person_id": res.payload.get("Pid") if res.payload else None,
+                    "is_lost": res.payload.get("is_lost") if res.payload else None,
+                    "is_elderly": res.payload.get("is_elderly") if res.payload else None,
+                    "is_disabled": res.payload.get("is_disabled") if res.payload else None
+                }
+                for idx, res in enumerate(results)
+            ]
+        }
+    
+    # Save to JSON file
+    output_path = "search_results.json"
+    with open(output_path, 'w') as f:
+        json.dump(json_results, f, indent=2)
+    
+    print(f"Results saved to {output_path}")
+            
+
 
 
 

@@ -609,7 +609,6 @@ with tab5:
                 try:
                     # إنشاء CDP جديد
                     new_cdp = create_camera_detected_person(db)
-                    new_cdp.calculate_ai_attributes()
                     
                     # تحديث الشخص بالـ CDP الجديد
                     update_person(db, ai_person, cameraDetectedPersonId=new_cdp.cameraDetectedPersonId)
