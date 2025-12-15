@@ -8,7 +8,9 @@ import multiprocessing as mp
 from multiprocessing import get_context
 from typing import List
 from MCDPT.multiprocessing_mct import process_stream
-from Embedding_worker.embedding_worker import process_embeddings_job, sync_clip_embeddings_to_sql
+from Embedding_worker.embedding_worker import process_embeddings_job, sync_clip_embeddings_to_sql, lost_person_search
+from database import SessionLocal  # import your session creator
+from crud import get_persons_count, get_lost_persons
 
 
 st.set_page_config(
@@ -89,6 +91,15 @@ def save_uploaded_files(uploaded_files) -> List[str]:
         paths.append(tmp.name)
     return paths
 
+def check_lost_persons():
+    """Check for lost persons in the database."""
+    db = SessionLocal()
+    lost_persons = get_lost_persons(db)
+    if lost_persons:
+        all_person_results = lost_person_search(lost_persons=lost_persons)
+        return all_person_results
+    
+    return lost_persons
 
 
 
@@ -183,8 +194,11 @@ if start_button:
                                 args=([saved_paths]))
         sync_sql_worker = mp.Process(target=sync_clip_embeddings_to_sql)
 
+        check_for_lost_persons = mp.Process(target=check_lost_persons)
+
         emb_worker.start()
         sync_sql_worker.start()
+        check_for_lost_persons.start()
 
         st.session_state.processes['emb_worker'] = emb_worker
         st.session_state.processes['sync_sql_worker'] = sync_sql_worker

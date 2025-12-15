@@ -9,7 +9,12 @@ from CLIP.clip_v2 import CLIP
 from time import sleep
 from database import SessionLocal
 from models import CameraDetectedPerson
-from crud import update_camera_detected_person
+# from crud import update_camera_detected_person
+from crud import *
+from boxmot.appearance.reid.auto_backend import ReidAutoBackend
+from PIL import Image
+from torchvision import transforms
+
 
 DEVICE = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 QDRANT_URL = "http://localhost:6333"
@@ -93,7 +98,7 @@ def sync_clip_embeddings_to_sql(interval_seconds: int = 30):
         
         sleep(interval_seconds)
 
-def determine_elderly(elderly_embedding, person_emb, threshold=0.19):
+def determine_elderly(elderly_embedding, person_emb, threshold=0.21):
   
     cos_sim = np.dot(person_emb, elderly_embedding) # Because it's already normalized, cosine similarity is the dot product    
     if cos_sim > threshold:
@@ -102,7 +107,7 @@ def determine_elderly(elderly_embedding, person_emb, threshold=0.19):
         
 
 
-def determine_disabled(disabled_embedding, person_emb, threshold=0.19):
+def determine_disabled(disabled_embedding, person_emb, threshold=0.21):
 
     cos_sim = np.dot(person_emb, disabled_embedding) # Because it's already normalized, cosine similarity is the dot product
     
@@ -186,6 +191,129 @@ def process_embeddings_job(paths):
                        limit,
                        num_processed)
 
+def get_osnet_embedding(pil_image_path):
+    #Open image and convert to RGB using PIL
+    pil_image = Image.open(pil_image_path).convert("RGB")
+
+    # Convert PIL to numpy array (RGB format, which PIL uses by default)
+    image_np = np.array(pil_image)
+
+    # Initialize model
+    model = ReidAutoBackend(
+        weights=r"C:\Users\hthek\Downloads\Capstone-AI-SE\MCDPT\osnet_x0_25_msmt17.pt",
+        device=DEVICE,
+        half=False
+    )
+
+    # Get the actual model and move to device
+    osnet_model = model.model.model.to(DEVICE)
+    
+    # Convert image to tensor and preprocess
+    transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((256, 128)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    
+    # Preprocess image
+    image_tensor = transform(image_np).unsqueeze(0).to(DEVICE)
+    
+    # Get embedding
+    with torch.no_grad():
+        osnet_embedding = osnet_model(image_tensor).cpu().numpy()[0]
+
+    # Normalize
+    osnet_embedding = osnet_embedding / np.linalg.norm(osnet_embedding)
+
+    print(f"OSNet Embedding shape: {osnet_embedding.shape}")
+    return osnet_embedding
+
+
+def lost_person_search(lost_persons):
+    clip_obj = CLIP(model_name="ViT-B/32", device=DEVICE)
+    client = QdrantClient(QDRANT_URL)
+
+    all_person_results = {}
+
+    for person in lost_persons:
+        print(person.firstName, person.lastName, person.age)
+        person_description = person.description
+        person_img1 = person.image1
+        person_img2 = person.image2
+        person_img3 = person.image3
+        person_img4 = person.image4
+        person_img5 = person.image5
+
+        if person_description:
+            text_embedding = clip_obj.encode_text([person_description]).to('cpu').numpy()[0]
+            text_emb_results = client.search(
+                collection_name=CLIP_COLLECTION,
+                query_vector=text_embedding.tolist(),
+                limit=100
+            )
+
+        imgs = []
+        for img_path in [person_img1, person_img2, person_img3, person_img4, person_img5]:
+            if img_path:
+                try:
+                    imgs.append(img_path)
+                except Exception as e:
+                    print(f"Error loading image {img_path}: {e}")
+                    continue
+        
+        if imgs:
+            clip_img_embeddings = clip_obj.encode_images(imgs).to('cpu').numpy()
+            osnet_img_embeddings = [get_osnet_embedding(img) for img in imgs]
+        
+            for img_emb in clip_img_embeddings:
+                # Perform search in Qdrant
+                clip_results = client.search(
+                    collection_name=CLIP_COLLECTION,
+                    query_vector=img_emb.tolist(),
+                    limit=100
+                )
+            for osnet_emb in osnet_img_embeddings:
+                osnet_results = client.search(
+                    collection_name=COLLECTION_NAME,
+                    query_vector=osnet_emb.tolist(),
+                    limit=100
+                )
+            
+            # Extract PIDs from each result set
+            clip_pids = {res.payload.get("Pid") for res in clip_results if res.payload and res.payload.get("Pid")}
+            osnet_pids = {res.payload.get("Pid") for res in osnet_results if res.payload and res.payload.get("Pid")}
+            text_pids = {res.payload.get("Pid") for res in text_emb_results if res.payload and res.payload.get("Pid")}
+
+            # Find PIDs that appear in ALL three result sets
+            common_pids = clip_pids & osnet_pids & text_pids  # Set intersection
+
+            print(f"PIDs appearing in all three searches: {len(common_pids)}")
+
+            # Combine all results
+            combined_results = {res.id: res for res in (clip_results + osnet_results + text_emb_results)}
+            results = list(combined_results.values())
+            all_results = sorted(results, key=lambda res: res.score, reverse=True)[:100]
+
+            # Filter to only results with PIDs that appeared in all three searches
+            filtered_results = [res for res in results if res.payload.get("Pid") in common_pids]
+            filtered_results = sorted(filtered_results, key=lambda res: res.score, reverse=True)[:100] # Sort by confidence score and take top 100
+
+            # Remove filtered_results from all_results (remove PIDs that appeared in all three searches)
+            remaining_results = [res for res in all_results if res.payload.get("Pid") not in common_pids]
+            remaining_results = sorted(remaining_results, key=lambda res: res.score, reverse=True)[:100 - len(filtered_results)]
+
+            final_results = filtered_results + remaining_results
+
+            print(f"Top 100 results by confidence score:")
+            for res in final_results[:10]:  # Print top 10
+                payload = res.payload or {}
+                pid = payload.get("Pid")
+                print(f"  Pid: {pid}, Score: {res.score:.4f}")
+
+            all_person_results[pid] = final_results
+
+    return all_person_results
 
 
 
