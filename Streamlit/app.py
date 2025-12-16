@@ -11,8 +11,12 @@ from MCDPT.multiprocessing_mct import process_stream
 from Embedding_worker.embedding_worker import *
 from database import SessionLocal  # import your session creator
 from crud import get_persons_count, get_lost_persons
+import logging
+import warnings
 
-
+# Suppress warnings (deprecations, user warnings, etc.) so only errors are shown
+warnings.filterwarnings("ignore")
+logging.getLogger("streamlit").setLevel(logging.ERROR)
 
 st.set_page_config(
     page_title="Lost Persons Management System",

@@ -7,10 +7,10 @@ from transformers import pipeline
 from Embedding_worker.helpers import extract_frame_by_count, get_person_crop_from_coords
 from CLIP.clip_v2 import CLIP
 from time import sleep
-from Streamlit.database import SessionLocal
-from Streamlit.models import CameraDetectedPerson
-# from crud import update_camera_detected_person
-from Streamlit.crud import *
+# Import database / models / crud consistently using the same module paths
+from database import SessionLocal
+from models import CameraDetectedPerson
+from crud import *
 from boxmot.appearance.reid.auto_backend import ReidAutoBackend
 from PIL import Image
 from torchvision import transforms
@@ -240,12 +240,15 @@ def lost_person_search(lost_persons):
     for person in lost_persons:
         print(person.firstName, person.lastName, person.age)
         person_description = person.description
-        person_img1 = person.image1
-        person_img2 = person.image2
-        person_img3 = person.image3
-        person_img4 = person.image4
-        person_img5 = person.image5
 
+        # Use correct attribute names from the Person model (image_1 ... image_5)
+        person_img1 = getattr(person, "image_1", None)
+        person_img2 = getattr(person, "image_2", None)
+        person_img3 = getattr(person, "image_3", None)
+        person_img4 = getattr(person, "image_4", None)
+        person_img5 = getattr(person, "image_5", None)
+
+        text_emb_results = []
         if person_description:
             text_embedding = clip_obj.encode_text([person_description]).to('cpu').numpy()[0]
             text_emb_results = client.search(
@@ -263,46 +266,54 @@ def lost_person_search(lost_persons):
                     print(f"Error loading image {img_path}: {e}")
                     continue
         
-        if imgs:
-            clip_img_embeddings = clip_obj.encode_images(imgs).to('cpu').numpy()
-            osnet_img_embeddings = [get_osnet_embedding(img) for img in imgs]
-        
-            for img_emb in clip_img_embeddings:
-                # Perform search in Qdrant
-                clip_results = client.search(
-                    collection_name=CLIP_COLLECTION,
-                    query_vector=img_emb.tolist(),
-                    limit=100
-                )
-            for osnet_emb in osnet_img_embeddings:
-                osnet_results = client.search(
-                    collection_name=COLLECTION_NAME,
-                    query_vector=osnet_emb.tolist(),
-                    limit=100
-                )
-            
-            # Extract PIDs from each result set
-            clip_pids = {res.payload.get("Pid") for res in clip_results if res.payload and res.payload.get("Pid")}
-            osnet_pids = {res.payload.get("Pid") for res in osnet_results if res.payload and res.payload.get("Pid")}
-            text_pids = {res.payload.get("Pid") for res in text_emb_results if res.payload and res.payload.get("Pid")}
+        if imgs or text_emb_results:
+            clip_results = []
+            osnet_results = []
 
-            # Find PIDs that appear in ALL three result sets
-            common_pids = clip_pids & osnet_pids & text_pids  # Set intersection
+            if imgs:
+                clip_img_embeddings = clip_obj.encode_images(imgs).to('cpu').numpy()
+                osnet_img_embeddings = [get_osnet_embedding(img) for img in imgs]
+            
+                for img_emb in clip_img_embeddings:
+                    # Perform search in Qdrant (CLIP collection)
+                    clip_results = client.search(
+                        collection_name=CLIP_COLLECTION,
+                        query_vector=img_emb.tolist(),
+                        limit=100
+                    )
+                for osnet_emb in osnet_img_embeddings:
+                    osnet_results = client.search(
+                        collection_name=COLLECTION_NAME,
+                        query_vector=osnet_emb.tolist(),
+                        limit=100
+                    )
+            
+            # Extract PIDs from each result set, tolerating empty result sets
+            clip_pids = {res.payload.get("Pid") for res in clip_results if res.payload and res.payload.get("Pid")} if clip_results else set()
+            osnet_pids = {res.payload.get("Pid") for res in osnet_results if res.payload and res.payload.get("Pid")} if osnet_results else set()
+            text_pids = {res.payload.get("Pid") for res in text_emb_results if res.payload and res.payload.get("Pid")} if text_emb_results else set()
+
+            # Find PIDs that appear in ALL three result sets if possible,
+            # otherwise fall back to union so we still return useful matches.
+            if clip_pids and osnet_pids and text_pids:
+                common_pids = clip_pids & osnet_pids & text_pids
+            else:
+                common_pids = clip_pids | osnet_pids | text_pids
 
             print(f"PIDs appearing in all three searches: {len(common_pids)}")
 
-            # Combine all results
+            # Combine all results (may be empty lists)
             combined_results = {res.id: res for res in (clip_results + osnet_results + text_emb_results)}
             results = list(combined_results.values())
             all_results = sorted(results, key=lambda res: res.score, reverse=True)[:100]
 
-            # Filter to only results with PIDs that appeared in all three searches
-            filtered_results = [res for res in results if res.payload.get("Pid") in common_pids]
-            filtered_results = sorted(filtered_results, key=lambda res: res.score, reverse=True)[:100] # Sort by confidence score and take top 100
+            # Filter to only results with PIDs that appeared in the common set
+            filtered_results = [res for res in results if res.payload and res.payload.get("Pid") in common_pids]
+            filtered_results = sorted(filtered_results, key=lambda res: res.score, reverse=True)[:100]  # take top 100
 
-            # Remove filtered_results from all_results (remove PIDs that appeared in all three searches)
-            remaining_results = [res for res in all_results if res.payload.get("Pid") not in common_pids]
-            remaining_results = sorted(remaining_results, key=lambda res: res.score, reverse=True)[:100 - len(filtered_results)]
+            # Remove filtered_results from all_results (so remaining_results are "secondary" matches)
+            remaining_results = [res for res in all_results if not res.payload or res.payload.get("Pid") not in common_pids]
+            remaining_results = sorted(remaining_results, key=lambda res: res.score, reverse=True)[: max(0, 100 - len(filtered_results))]
 
             final_results = filtered_results + remaining_results
 
@@ -312,7 +323,8 @@ def lost_person_search(lost_persons):
                 pid = payload.get("Pid")
                 print(f"  Pid: {pid}, Score: {res.score:.4f}")
 
-            all_person_results[pid] = final_results
+            # Use the lost-person DB id as the key into all_person_results
+            all_person_results[person.personId] = final_results
 
     # Convert results to JSON-serializable format (with more details)
     json_results = {}

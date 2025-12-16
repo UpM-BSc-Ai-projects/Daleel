@@ -33,7 +33,8 @@ class SecurityStaff(Base):
     # this and relationship came together (powrerful facilatator of SQLAlchemy)
     # to link staff to admin e.g staff = get_security_staff_by_id(db, 1), print(staff.admin.name)
     admin_id = Column(Integer, ForeignKey("admins.adminId", ondelete='SET NULL'), nullable=True) # if admin is deleted, set to NULL
-    admin = relationship("Admin", backref="security_staffs")  # ? Admin.security_staffs ���� �� ��������� ��������
+    # Relationship to Admin (string target; resolved via SQLAlchemy registry)
+    admin = relationship("Admin", backref="security_staffs")
 
 class FamilyMember(Base):
     __tablename__ = "family_members"
