@@ -51,12 +51,28 @@ class CameraDetectedPerson(Base):
     __tablename__ = "camera_detected_persons"
     __table_args__ = {'extend_existing': True}
 
-    cameraDetectedPersonId = Column(String(10), primary_key=True,autoincrement=False)
+    # Use a Python-side default generator for the primary key so inserts from
+    # CRUD helpers (which don't explicitly set the ID) don't violate NOT NULL.
+    cameraDetectedPersonId = Column(
+        String(10),
+        primary_key=True,
+        autoincrement=False,
+        default=lambda: str(random.randint(1000000000, 9999999999)),
+    )
     potentiallyLost = Column(Boolean, default=False)
     isElderly = Column(Boolean, default=False)
     isDisabled = Column(Boolean, default=False)
 
-    
+    def calculate_ai_attributes(self):
+        """
+        Placeholder / default AI attributes calculation.
+        In the current design, actual AI flags are computed in the
+        embedding worker and synced from Qdrant. This method exists
+        only so that legacy calls (e.g. from CRUD helpers) don't fail.
+        """
+        # No-op implementation – keep current values as-is.
+        # You can later replace this with real logic if needed.
+        return self
 
 class Person(Base):
     __tablename__ = "persons" # indirectly inherits from CameraDetectedPerson
