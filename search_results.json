@@ -1,0 +1,507 @@
+{
+  "1": {
+    "person_id": 1,
+    "total_matches": 11,
+    "matches": [
+      {
+        "rank": 1,
+        "detected_person_id": "10-0",
+        "confidence_score": 0.55310774,
+        "frame_count": 26,
+        "coords": [
+          579,
+          371,
+          607,
+          443
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 2,
+        "detected_person_id": "8-0",
+        "confidence_score": 0.54405993,
+        "frame_count": 34,
+        "coords": [
+          552,
+          454,
+          586,
+          535
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 3,
+        "detected_person_id": "4-0",
+        "confidence_score": 0.53727573,
+        "frame_count": 20,
+        "coords": [
+          636,
+          366,
+          665,
+          435
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 4,
+        "detected_person_id": "7-0",
+        "confidence_score": 0.5316885,
+        "frame_count": 34,
+        "coords": [
+          723,
+          379,
+          751,
+          458
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 5,
+        "detected_person_id": "4-1",
+        "confidence_score": 0.5195833,
+        "frame_count": 22,
+        "coords": [
+          446,
+          398,
+          484,
+          479
+        ],
+        "cam_id": 1
+      },
+      {
+        "rank": 6,
+        "detected_person_id": "1-1",
+        "confidence_score": 0.5004705,
+        "frame_count": 20,
+        "coords": [
+          375,
+          379,
+          412,
+          459
+        ],
+        "cam_id": 1
+      },
+      {
+        "rank": 7,
+        "detected_person_id": "15-0",
+        "confidence_score": 0.49830452,
+        "frame_count": 36,
+        "coords": [
+          836,
+          415,
+          876,
+          513
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 8,
+        "detected_person_id": "9-1",
+        "confidence_score": 0.48871675,
+        "frame_count": 66,
+        "coords": [
+          456,
+          382,
+          493,
+          478
+        ],
+        "cam_id": 1
+      },
+      {
+        "rank": 9,
+        "detected_person_id": "3-1",
+        "confidence_score": 0.485462,
+        "frame_count": 20,
+        "coords": [
+          133,
+          403,
+          175,
+          487
+        ],
+        "cam_id": 1
+      },
+      {
+        "rank": 10,
+        "detected_person_id": "3-0",
+        "confidence_score": 0.47082704,
+        "frame_count": 47,
+        "coords": [
+          503,
+          456,
+          535,
+          525
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 11,
+        "detected_person_id": "6-0",
+        "confidence_score": 0.464379,
+        "frame_count": 20,
+        "coords": [
+          648,
+          454,
+          703,
+          551
+        ],
+        "cam_id": 0
+      }
+    ]
+  },
+  "2": {
+    "person_id": 2,
+    "total_matches": 8,
+    "matches": [
+      {
+        "rank": 1,
+        "detected_person_id": "8-0",
+        "confidence_score": 0.66522706,
+        "frame_count": 34,
+        "coords": [
+          552,
+          454,
+          586,
+          535
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 2,
+        "detected_person_id": "7-0",
+        "confidence_score": 0.66225797,
+        "frame_count": 34,
+        "coords": [
+          723,
+          379,
+          751,
+          458
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 3,
+        "detected_person_id": "15-0",
+        "confidence_score": 0.65205324,
+        "frame_count": 36,
+        "coords": [
+          836,
+          415,
+          876,
+          513
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 4,
+        "detected_person_id": "4-0",
+        "confidence_score": 0.65122616,
+        "frame_count": 20,
+        "coords": [
+          636,
+          366,
+          665,
+          435
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 5,
+        "detected_person_id": "10-0",
+        "confidence_score": 0.65056574,
+        "frame_count": 26,
+        "coords": [
+          579,
+          371,
+          607,
+          443
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 6,
+        "detected_person_id": "4-1",
+        "confidence_score": 0.64197195,
+        "frame_count": 22,
+        "coords": [
+          446,
+          398,
+          484,
+          479
+        ],
+        "cam_id": 1
+      },
+      {
+        "rank": 7,
+        "detected_person_id": "9-1",
+        "confidence_score": 0.63877916,
+        "frame_count": 66,
+        "coords": [
+          456,
+          382,
+          493,
+          478
+        ],
+        "cam_id": 1
+      },
+      {
+        "rank": 8,
+        "detected_person_id": "2-0",
+        "confidence_score": 0.20772056,
+        "frame_count": 20,
+        "coords": [
+          566,
+          453,
+          602,
+          543
+        ],
+        "cam_id": 0
+      }
+    ]
+  },
+  "3": {
+    "person_id": 3,
+    "total_matches": 8,
+    "matches": [
+      {
+        "rank": 1,
+        "detected_person_id": "4-0",
+        "confidence_score": 0.5913636,
+        "frame_count": 20,
+        "coords": [
+          636,
+          366,
+          665,
+          435
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 2,
+        "detected_person_id": "8-0",
+        "confidence_score": 0.59098995,
+        "frame_count": 34,
+        "coords": [
+          552,
+          454,
+          586,
+          535
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 3,
+        "detected_person_id": "10-0",
+        "confidence_score": 0.5909102,
+        "frame_count": 26,
+        "coords": [
+          579,
+          371,
+          607,
+          443
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 4,
+        "detected_person_id": "7-0",
+        "confidence_score": 0.5821279,
+        "frame_count": 34,
+        "coords": [
+          723,
+          379,
+          751,
+          458
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 5,
+        "detected_person_id": "9-1",
+        "confidence_score": 0.56562525,
+        "frame_count": 66,
+        "coords": [
+          456,
+          382,
+          493,
+          478
+        ],
+        "cam_id": 1
+      },
+      {
+        "rank": 6,
+        "detected_person_id": "15-0",
+        "confidence_score": 0.5641937,
+        "frame_count": 36,
+        "coords": [
+          836,
+          415,
+          876,
+          513
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 7,
+        "detected_person_id": "4-1",
+        "confidence_score": 0.5189223,
+        "frame_count": 22,
+        "coords": [
+          446,
+          398,
+          484,
+          479
+        ],
+        "cam_id": 1
+      },
+      {
+        "rank": 8,
+        "detected_person_id": "1-0",
+        "confidence_score": 0.22914582,
+        "frame_count": 20,
+        "coords": [
+          619,
+          452,
+          662,
+          553
+        ],
+        "cam_id": 0
+      }
+    ]
+  },
+  "4": {
+    "person_id": 4,
+    "total_matches": 10,
+    "matches": [
+      {
+        "rank": 1,
+        "detected_person_id": "4-0",
+        "confidence_score": 0.5994582,
+        "frame_count": 20,
+        "coords": [
+          636,
+          366,
+          665,
+          435
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 2,
+        "detected_person_id": "10-0",
+        "confidence_score": 0.58909714,
+        "frame_count": 26,
+        "coords": [
+          579,
+          371,
+          607,
+          443
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 3,
+        "detected_person_id": "8-0",
+        "confidence_score": 0.56027555,
+        "frame_count": 34,
+        "coords": [
+          552,
+          454,
+          586,
+          535
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 4,
+        "detected_person_id": "4-1",
+        "confidence_score": 0.55434644,
+        "frame_count": 22,
+        "coords": [
+          446,
+          398,
+          484,
+          479
+        ],
+        "cam_id": 1
+      },
+      {
+        "rank": 5,
+        "detected_person_id": "7-0",
+        "confidence_score": 0.5519742,
+        "frame_count": 34,
+        "coords": [
+          723,
+          379,
+          751,
+          458
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 6,
+        "detected_person_id": "9-1",
+        "confidence_score": 0.55053306,
+        "frame_count": 66,
+        "coords": [
+          456,
+          382,
+          493,
+          478
+        ],
+        "cam_id": 1
+      },
+      {
+        "rank": 7,
+        "detected_person_id": "15-0",
+        "confidence_score": 0.51909345,
+        "frame_count": 36,
+        "coords": [
+          836,
+          415,
+          876,
+          513
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 8,
+        "detected_person_id": "1-1",
+        "confidence_score": 0.49632403,
+        "frame_count": 20,
+        "coords": [
+          375,
+          379,
+          412,
+          459
+        ],
+        "cam_id": 1
+      },
+      {
+        "rank": 9,
+        "detected_person_id": "6-0",
+        "confidence_score": 0.49281257,
+        "frame_count": 20,
+        "coords": [
+          648,
+          454,
+          703,
+          551
+        ],
+        "cam_id": 0
+      },
+      {
+        "rank": 10,
+        "detected_person_id": "3-1",
+        "confidence_score": 0.48164013,
+        "frame_count": 20,
+        "coords": [
+          133,
+          403,
+          175,
+          487
+        ],
+        "cam_id": 1
+      }
+    ]
+  }
+}

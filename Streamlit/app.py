@@ -10,7 +10,7 @@ from typing import List
 from MCDPT.multiprocessing_mct import process_stream
 from Embedding_worker.embedding_worker import *
 from database import SessionLocal  # import your session creator
-from crud import get_persons_count, get_lost_persons
+from crud import  get_lost_persons
 import logging
 import warnings
 
@@ -153,6 +153,7 @@ db_lock = st.session_state.db_lock
 Pid = st.session_state.Pid
 
 
+
 # Handle start
 if start_button:
     inputs = []  # tuples of (type, identifier)
@@ -162,6 +163,8 @@ if start_button:
         saved_paths = save_uploaded_files(uploaded_files)
         for idx, p in enumerate(saved_paths):
             inputs.append(("file", p))
+        st.session_state.saved_paths = saved_paths
+    
 
     # webcams
     for cam in selected_cams:
@@ -187,25 +190,21 @@ if start_button:
                 args=(vid_path, cam_id, lock, db_lock, Pid),
                 daemon=True,
             )
+
             proc.start()
 
             st.session_state.processes[key] = proc
             st.session_state.process_meta[key] = {"type": typ, "input": ident, "started_at": time.time()}
             started += 1
 
-        st.success(f"Started {started} process(es). See the Running processes list.")
-
+        
         emb_worker = mp.Process(target=process_embeddings_job,
                                 args=([saved_paths]))
         sync_sql_worker = mp.Process(target=sync_clip_embeddings_to_sql)
 
-        db = SessionLocal()
-        lost_persons = get_lost_persons(db)
-        if lost_persons:
-            check_for_lost_persons = mp.Process(target=lost_person_search, args=(lost_persons,))
-            check_for_lost_persons.start()
-            st.session_state.processes['check_for_lost_persons'] = check_for_lost_persons
-            started += 1
+        
+
+        
 
         emb_worker.start()
         sync_sql_worker.start()
@@ -214,7 +213,15 @@ if start_button:
         st.session_state.processes['sync_sql_worker'] = sync_sql_worker
 
         started += 2
+        st.success(f"Started {started} process(es). See the Running processes list.")
 
+db = SessionLocal()
+lost_persons = get_lost_persons(db)
+if lost_persons and "check_for_lost_persons" not in st.session_state.processes and st.session_state.processes:
+            check_for_lost_persons = mp.Process(target=lost_person_search)
+            check_for_lost_persons.start()
+            st.session_state.processes['check_for_lost_persons'] = check_for_lost_persons
+            
 
 # Handle stop
 if stop_button:

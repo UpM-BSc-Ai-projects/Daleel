@@ -89,7 +89,7 @@ def process_stream(vid_path: str, cam_id: int, lock, db_lock=None, Pid=None):
     
     
     client = QdrantClient("http://localhost:6333")
-    reid_weights = Path(r"C:\Users\themi\PycharmProjects\Capstone-AI-SE\MCDPT\osnet_x0_25_msmt17.pt")
+    reid_weights = Path(r"osnet_x0_25_msmt17.pt")
     osnet = auto_backend.ReidAutoBackend(
                 weights=reid_weights, device=device, half=False
             ).model.model.to(device)

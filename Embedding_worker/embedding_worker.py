@@ -7,6 +7,8 @@ from transformers import pipeline
 from Embedding_worker.helpers import extract_frame_by_count, get_person_crop_from_coords
 from CLIP.clip_v2 import CLIP
 from time import sleep
+from qdrant_client.models import Filter, FieldCondition, MatchValue
+
 # Import database / models / crud consistently using the same module paths
 from database import SessionLocal
 from models import CameraDetectedPerson
@@ -19,7 +21,7 @@ import json
 
 DEVICE = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 QDRANT_URL = "http://localhost:6333"
-COLLECTION_NAME = "stream"
+STREAM_COLLECTION = "stream"
 CLIP_COLLECTION = "CLIP_embeddings"
 
 texts = [
@@ -125,7 +127,7 @@ def process_embeddings(client,
                        limit,
                        num_processed):
     
-    records = client.retrieve(collection_name=COLLECTION_NAME,ids=range(num_processed,limit),
+    records = client.retrieve(collection_name=STREAM_COLLECTION,ids=range(num_processed,limit),
                             with_payload=True)
     num_processed += len(records)
     
@@ -201,7 +203,7 @@ def get_osnet_embedding(pil_image_path):
 
     # Initialize model
     model = ReidAutoBackend(
-        weights=r"C:\Users\themi\PycharmProjects\Capstone-AI-SE\MCDPT\osnet_x0_25_msmt17.pt",
+        weights=Path(r"osnet_x0_25_msmt17.pt"),
         device=DEVICE,
         half=False
     )
@@ -227,11 +229,12 @@ def get_osnet_embedding(pil_image_path):
     # Normalize
     osnet_embedding = osnet_embedding / np.linalg.norm(osnet_embedding)
 
-    print(f"OSNet Embedding shape: {osnet_embedding.shape}")
     return osnet_embedding
 
 
-def lost_person_search(lost_persons):
+def lost_person_search():
+    db = SessionLocal()
+    lost_persons = get_lost_persons(db)
     clip_obj = CLIP(model_name="ViT-B/32", device=DEVICE)
     client = QdrantClient(QDRANT_URL)
 
@@ -254,7 +257,7 @@ def lost_person_search(lost_persons):
             text_emb_results = client.search(
                 collection_name=CLIP_COLLECTION,
                 query_vector=text_embedding.tolist(),
-                limit=100
+                limit=500
             )
 
         imgs = []
@@ -279,13 +282,13 @@ def lost_person_search(lost_persons):
                     clip_results = client.search(
                         collection_name=CLIP_COLLECTION,
                         query_vector=img_emb.tolist(),
-                        limit=100
+                        limit=1000
                     )
                 for osnet_emb in osnet_img_embeddings:
                     osnet_results = client.search(
-                        collection_name=COLLECTION_NAME,
+                        collection_name=STREAM_COLLECTION,
                         query_vector=osnet_emb.tolist(),
-                        limit=100
+                        limit=1000
                     )
             
             # Extract PIDs from each result set, tolerating empty result sets
@@ -300,50 +303,94 @@ def lost_person_search(lost_persons):
             else:
                 common_pids = clip_pids | osnet_pids | text_pids
 
+            
+
             print(f"PIDs appearing in all three searches: {len(common_pids)}")
+
 
             # Combine all results (may be empty lists)
             combined_results = {res.id: res for res in (clip_results + osnet_results + text_emb_results)}
             results = list(combined_results.values())
-            all_results = sorted(results, key=lambda res: res.score, reverse=True)[:100]
+            all_results = sorted(results, key=lambda res: res.score, reverse=True)
 
             # Filter to only results with PIDs that appeared in the common set
             filtered_results = [res for res in results if res.payload and res.payload.get("Pid") in common_pids]
-            filtered_results = sorted(filtered_results, key=lambda res: res.score, reverse=True)[:100]  # take top 100
+            filtered_results = sorted(filtered_results, key=lambda res: res.score, reverse=True)
 
             # Remove filtered_results from all_results (so remaining_results are "secondary" matches)
             remaining_results = [res for res in all_results if not res.payload or res.payload.get("Pid") not in common_pids]
-            remaining_results = sorted(remaining_results, key=lambda res: res.score, reverse=True)[: max(0, 100 - len(filtered_results))]
+            remaining_results = sorted(remaining_results, key=lambda res: res.score, reverse=True)
 
             final_results = filtered_results + remaining_results
+            final_unique_results = []
+            unique_pids = []
+            for res in final_results:
+                pid = res.payload.get("Pid")
+                if not pid in unique_pids:
+                    final_unique_results.append(res)
+                    unique_pids.append(pid)
+                if len(unique_pids) >= 100:
+                    break
 
-            print(f"Top 100 results by confidence score:")
-            for res in final_results[:10]:  # Print top 10
-                payload = res.payload or {}
-                pid = payload.get("Pid")
-                print(f"  Pid: {pid}, Score: {res.score:.4f}")
+
+            
+                
 
             # Use the lost-person DB id as the key into all_person_results
-            all_person_results[person.personId] = final_results
+            all_person_results[person.personId] = final_unique_results
+            print("The final unique:",final_unique_results)
 
     # Convert results to JSON-serializable format (with more details)
     json_results = {}
     for person_id, results in all_person_results.items():
+        matches = []
+        for idx, res in enumerate(results,1):
+            pid = res.payload.get("Pid")
+            print("looking for pid:"+pid)
+            stream_payload = client.scroll(
+                            collection_name=STREAM_COLLECTION,
+                            scroll_filter=Filter(
+                            must=[
+                            FieldCondition(
+                            key="Pid",
+                            match=MatchValue(value=pid)
+                            )   
+                            ]
+                            ),
+                            limit=1
+                        )
+            print("results for "+pid)
+            print(stream_payload)
+            stream_payload = stream_payload[0][0].payload
+            # clip_payload = client.scroll(
+            #                 collection_name=CLIP_COLLECTION,
+            #                 scroll_filter=Filter(
+            #                 must=[
+            #                 FieldCondition(
+            #                 key="Pid",
+            #                 match=MatchValue(value=pid)
+            #                 )   
+            #                 ]
+            #                 ),
+            #                 limit=1
+            #             )[0][0].payload
+            matchh = {
+                    "rank": idx,
+                    "detected_person_id": pid,
+                    "confidence_score": float(res.score),
+                    # "is_lost": clip_payload.get("is_lost"),
+                    # "is_elderly": clip_payload.get("is_elderly"),
+                    # "is_disabled": clip_payload.get("is_disabled"),
+                    "frame_count": stream_payload.get("frame_count"),
+                    "coords":stream_payload.get("coords"),
+                    "cam_id":stream_payload.get("cam_id")
+                    }
+            matches.append(matchh)
+            
         json_results[str(person_id)] = {
             "person_id": person_id,
             "total_matches": len(results),
-            "matches": [
-                {
-                    "rank": idx + 1,
-                    "qdrant_id": res.id,
-                    "confidence_score": float(res.score),
-                    "detected_person_id": res.payload.get("Pid") if res.payload else None,
-                    "is_lost": res.payload.get("is_lost") if res.payload else None,
-                    "is_elderly": res.payload.get("is_elderly") if res.payload else None,
-                    "is_disabled": res.payload.get("is_disabled") if res.payload else None
-                }
-                for idx, res in enumerate(results)
-            ]
+            "matches": matches
         }
     
     # Save to JSON file
