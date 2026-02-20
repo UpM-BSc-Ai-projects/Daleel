@@ -1,0 +1,7 @@
+# Train/Val data paths (absolute paths recommended for safety)
+train: C:/Users/themi/PycharmProjects/Capstone2/Detection Fine-tune/data/images/train
+val: C:/Users/themi/PycharmProjects/Capstone2/Detection Fine-tune/data/images/val
+
+# Classes
+nc: 1
+names: ["person"]
