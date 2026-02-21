@@ -1,0 +1,6 @@
+Video,Tracker,Frames Processed,Inference Speed (FPS),Avg Velocity Smoothness,Avg Direction Change (deg),Avg Acceleration Smoothness,Avg Histogram Consistency,Avg IoU Consistency,Total Unique IDs,Avg Track Length,Fragmentation Index,Short Track Ratio (%),Longest Track (frames)
+Vid_10,ByteTrack,1500,26.31,4.3614,50.03,5.3515,0.9059,0.8617,437,80.25,0.2913,21.05,484
+Vid_11,ByteTrack,1500,22.27,5.4172,49.78,6.8094,0.9126,0.8579,670,101.44,0.4467,16.12,658
+Vid_12,ByteTrack,1500,25.65,3.9731,54.86,5.0746,0.9155,0.8799,605,96.68,0.4033,16.03,1024
+Vid_13,ByteTrack,1500,19.08,5.9687,53.12,7.5858,0.9254,0.8632,931,106.44,0.6207,13.53,1417
+Vid_9,ByteTrack,1500,27.17,5.1719,47.67,6.6311,0.9128,0.8607,476,101.3,0.3173,14.29,841
