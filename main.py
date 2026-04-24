@@ -311,13 +311,23 @@ def search_endpoint(
         
     filter_conditions = []
     
+    def parse_value(v):
+        v = v.strip()
+        try:
+            return int(v)
+        except ValueError:
+            try:
+                return float(v)
+            except ValueError:
+                return v
+
     if cameras:
-        cam_list = [c.strip() for c in cameras.split(",") if c.strip()]
+        cam_list = [parse_value(c) for c in cameras.split(",") if c.strip()]
         if cam_list:
             filter_conditions.append(FieldCondition(key="Cam", match=MatchAny(any=cam_list)))
             
     if frames:
-        frame_list = [c.strip() for c in frames.split(",") if c.strip()]
+        frame_list = [parse_value(c) for c in frames.split(",") if c.strip()]
         if frame_list:
             filter_conditions.append(FieldCondition(key="Frame", match=MatchAny(any=frame_list)))
 

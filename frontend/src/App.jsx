@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, BarChart2, Video, Upload, Trash2, StopCircle, RefreshCw, X, Play, Image as ImageIcon } from 'lucide-react';
+import { Search, BarChart2, Video, Upload, Trash2, StopCircle, RefreshCw, X, Play, Image as ImageIcon, Sun, Moon } from 'lucide-react';
 import './index.css';
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
@@ -108,10 +108,25 @@ export default function App() {
   const [selectedImage, setSelectedImage] = useState(null);
   const t = TRANSLATIONS[lang];
 
+  const [theme, setTheme] = useState(() => {
+    const savedTheme = localStorage.getItem('app-theme');
+    if (savedTheme) return savedTheme;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  });
+
   useEffect(() => {
     if (lang === 'ar') document.body.classList.add('rtl');
     else document.body.classList.remove('rtl');
   }, [lang]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('app-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
 
   return (
     <div className="app-container">
@@ -120,9 +135,19 @@ export default function App() {
           <Search size={32} />
           {t.app_title}
         </h1>
-        <div className="lang-toggle glass-panel" style={{ padding: '4px' }}>
-          <button className={lang === 'en' ? 'active' : ''} onClick={() => setLang('en')}>EN</button>
-          <button className={lang === 'ar' ? 'active' : ''} onClick={() => setLang('ar')}>AR</button>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <button 
+            onClick={toggleTheme} 
+            className="btn btn-secondary" 
+            style={{ padding: '8px', borderRadius: '50%' }}
+            aria-label="Toggle theme"
+          >
+            {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+          </button>
+          <div className="lang-toggle glass-panel" style={{ padding: '4px' }}>
+            <button className={lang === 'en' ? 'active' : ''} onClick={() => setLang('en')}>EN</button>
+            <button className={lang === 'ar' ? 'active' : ''} onClick={() => setLang('ar')}>AR</button>
+          </div>
         </div>
       </header>
 
@@ -151,7 +176,7 @@ export default function App() {
 
 function SearchTab({ t, onImageClick }) {
   const [textQuery, setTextQuery] = useState('');
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [recursiveId, setRecursiveId] = useState(null);
   
   const [availCameras, setAvailCameras] = useState([]);
@@ -170,11 +195,25 @@ function SearchTab({ t, onImageClick }) {
     }).catch(()=>{});
   }, []);
 
+  const handleClear = () => {
+    setTextQuery('');
+    setFiles([]);
+    setRecursiveId(null);
+    setSelectedCameras([]);
+    setFrames('');
+    setThreshold(0.0);
+    setResults([]);
+    setLimit(20);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleSearch = async (currentLimit = limit) => {
     setLoading(true);
     const formData = new FormData();
     formData.append('text_query', textQuery);
-    if (file && !recursiveId) formData.append('file', file);
+    if (files.length > 0 && !recursiveId) {
+      formData.append('file', files[0]);
+    }
     if (recursiveId) formData.append('recursive_id', recursiveId);
     formData.append('cameras', selectedCameras.join(','));
     formData.append('frames', frames);
@@ -193,14 +232,7 @@ function SearchTab({ t, onImageClick }) {
     setLoading(false);
   };
 
-  const handleCameraChange = (e) => {
-    const opts = e.target.options;
-    const selected = [];
-    for(let i=0; i<opts.length; i++) {
-        if(opts[i].selected) selected.push(opts[i].value);
-    }
-    setSelectedCameras(selected);
-  };
+
 
   return (
     <div className="grid" style={{ gridTemplateColumns: '1fr 300px' }}>
@@ -224,10 +256,25 @@ function SearchTab({ t, onImageClick }) {
           ) : (
             <div className="file-drop-area">
               <Upload size={24} style={{ marginBottom: 8, color: '#94a3b8' }}/>
-              <div>{file ? file.name : t.upload_image}</div>
+              <div>{files.length > 0 ? `${files.length} images selected` : t.upload_image}</div>
+              {files.length > 0 && (
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px', justifyContent: 'center' }}>
+                  {files.map((f, i) => (
+                    <div key={i} style={{ position: 'relative' }}>
+                      <img src={URL.createObjectURL(f)} alt="preview" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
+                      <button 
+                        style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', borderRadius: '50%', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer', fontSize: '10px', padding: 0 }}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setFiles(files.filter((_, index) => index !== i)); }}
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="file-input-wrapper" style={{ marginTop: 10 }}>
-                <button className="btn btn-secondary">{file ? 'Change Image' : 'Browse Image'}</button>
-                <input type="file" accept="image/*" onChange={e => setFile(e.target.files[0])} ref={fileInputRef}/>
+                <button className="btn btn-secondary">{files.length > 0 ? 'Add Images' : 'Browse Images'}</button>
+                <input type="file" accept="image/*" multiple onChange={e => setFiles([...files, ...Array.from(e.target.files)])} ref={fileInputRef}/>
               </div>
             </div>
           )}
@@ -239,11 +286,28 @@ function SearchTab({ t, onImageClick }) {
         <div>
           <label style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>{t.cameras}</label>
           {availCameras.length > 0 ? (
-             <select multiple value={selectedCameras} onChange={handleCameraChange} style={{height: '100px'}}>
-               {availCameras.map(c => <option key={c} value={c}>{c}</option>)}
-             </select>
+             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '150px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', marginTop: '0.5rem' }}>
+               {availCameras.map(c => (
+                 <label key={c} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                   <input 
+                     type="checkbox" 
+                     value={c} 
+                     checked={selectedCameras.includes(c)}
+                     onChange={(e) => {
+                       if (e.target.checked) {
+                         setSelectedCameras([...selectedCameras, c]);
+                       } else {
+                         setSelectedCameras(selectedCameras.filter(cam => cam !== c));
+                       }
+                     }}
+                     style={{ accentColor: 'var(--primary-color)', width: '16px', height: '16px', cursor: 'pointer' }}
+                   />
+                   {c}
+                 </label>
+               ))}
+             </div>
           ) : (
-             <input type="text" value={selectedCameras.join(',')} onChange={e => setSelectedCameras(e.target.value.split(','))} placeholder="cam1,cam2" />
+             <input type="text" value={selectedCameras.join(',')} onChange={e => setSelectedCameras(e.target.value.split(','))} placeholder="cam1,cam2" style={{ marginTop: '0.5rem' }} />
           )}
         </div>
         <div>
@@ -251,13 +315,22 @@ function SearchTab({ t, onImageClick }) {
           <input type="text" value={frames} onChange={e => setFrames(e.target.value)} />
         </div>
         <div>
-          <label style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>{t.threshold}: {threshold}</label>
-          <input type="range" min="0" max="1" step="0.05" value={threshold} onChange={e => setThreshold(parseFloat(e.target.value))} />
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <label style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>{t.threshold}</label>
+            <span style={{fontSize: '0.85rem', fontWeight: 'bold'}}>{Math.round(threshold * 100)}%</span>
+          </div>
+          <input type="range" min="0" max="1" step="0.05" value={threshold} onChange={e => setThreshold(parseFloat(e.target.value))} style={{ width: '100%', marginTop: '0.5rem' }} />
         </div>
-        <button className="btn btn-primary" style={{marginTop: 'auto'}} onClick={() => {setLimit(20); handleSearch(20);}} disabled={loading}>
-          {loading ? <RefreshCw className="spin" size={18} /> : <Search size={18} />}
-          {t.execute_search}
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
+          <button className="btn btn-secondary" style={{flex: 1}} onClick={handleClear} disabled={loading}>
+            <X size={18} />
+            {t.clear || "Clear"}
+          </button>
+          <button className="btn btn-primary" style={{flex: 2}} onClick={() => {setLimit(20); handleSearch(20);}} disabled={loading}>
+            {loading ? <RefreshCw className="spin" size={18} /> : <Search size={18} />}
+            {t.execute_search}
+          </button>
+        </div>
       </div>
 
       <div className="glass-panel" style={{ gridColumn: '1 / -1' }}>
@@ -365,6 +438,7 @@ function DashTab({ t }) {
 function CaptureTab({ t, onImageClick }) {
   const [vidFile, setVidFile] = useState(null);
   const [interval, setIntervalVal] = useState(5.0);
+  const [confidence, setConfidence] = useState(0.5);
   const [active, setActive] = useState(false);
   const [logs, setLogs] = useState([]);
   const [captures, setCaptures] = useState([]);
@@ -401,7 +475,7 @@ function CaptureTab({ t, onImageClick }) {
     const formData = new FormData();
     formData.append('file', vidFile);
     formData.append('interval', interval);
-    formData.append('conf', 0.5);
+    formData.append('conf', confidence);
 
     setActive(true);
     setLogs([{type:'info', msg:'Starting capture process. Uploading video... Please stand by.'}]);
@@ -447,8 +521,19 @@ function CaptureTab({ t, onImageClick }) {
         </div>
 
         <div>
-           <label style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>{t.interval}: {interval}s</label>
-           <input type="range" min="1" max="10" step="1" value={interval} onChange={e => setIntervalVal(parseFloat(e.target.value))} />
+           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+             <label style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>{t.interval}</label>
+             <span style={{fontSize: '0.85rem', fontWeight: 'bold'}}>{interval}s</span>
+           </div>
+           <input type="range" min="1" max="10" step="1" value={interval} onChange={e => setIntervalVal(parseFloat(e.target.value))} style={{ width: '100%', marginTop: '0.5rem' }} />
+        </div>
+
+        <div>
+           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+             <label style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>Confidence Threshold</label>
+             <span style={{fontSize: '0.85rem', fontWeight: 'bold'}}>{Math.round(confidence * 100)}%</span>
+           </div>
+           <input type="range" min="0" max="1" step="0.05" value={confidence} onChange={e => setConfidence(parseFloat(e.target.value))} style={{ width: '100%', marginTop: '0.5rem' }} />
         </div>
 
         <div style={{ marginTop: 'auto', display: 'flex', gap: '1rem' }}>
