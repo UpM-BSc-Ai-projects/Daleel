@@ -44,7 +44,31 @@ Before running the backend or frontend, they need to set up the environment vari
 
 ### 4. Run the Backend Server (FastAPI)
 Even if they just want the frontend and databases, the frontend will need the backend running to route its requests to the databases.
+But first, they need to install the dependencies, using either a conda environment or standard venv. The python version should be 3.10.20.
 
+**Conda**
+```bash
+# Open a new terminal in the root directory (Daleel)
+# Create a conda environment
+conda create -n daleel python=3.10.20
+
+# Activate it
+conda activate daleel
+
+# Install the required dependencies
+pip install --use-deprecated=legacy-resolver -r requirements.txt
+```
+*Note: A conflict error is expected, but the installation should still work. Due to the specific requirements of boxmot & realesrgan, this specific torch version is required, but will show as incompatible with other packages, yet the code should still work. This error is expected:*
+```bash
+ERROR: pip's legacy dependency resolver does not consider dependency conflicts when selecting packages. This behaviour is the source of the following dependency conflicts.
+boxmot 18.0.0 requires torch<3.0.0,>=2.2.1, but you'll have torch 2.0.1+cu118 which is incompatible.
+boxmot 18.0.0 requires torchvision<1.0.0,>=0.17.1, but you'll have torchvision 0.15.2+cu118 which is incompatible.
+transformers 5.7.0 requires regex>=2025.10.22, but you'll have regex 2024.11.6 which is incompatible.
+Successfully installed ...
+```
+
+
+**Standard venv**
 ```bash
 # Open a new terminal in the root directory (Daleel)
 # Create a virtual environment (optional but recommended)
@@ -56,8 +80,11 @@ venv\Scripts\activate
 source venv/bin/activate
 
 # Install the required dependencies
-pip install -r requirements.txt
+pip install --use-deprecated=legacy-resolver -r requirements.txt
+```
 
+**Finally, start the backend server:**
+```bash
 # Start the FastAPI server
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
