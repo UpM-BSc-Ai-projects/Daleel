@@ -33,6 +33,7 @@ QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "images")
 MODEL_NAME = os.getenv("CLIP_MODEL", "sentence-transformers/clip-ViT-B-32")
 YOLO_MODEL_PATH = os.getenv("YOLO_MODEL", "yolo_person_yv11_best.pt")
+CAMERAS_FOLDER = os.getenv("CAMERAS_FOLDER", "cameras")
 
 client_minio = None
 client_qdrant = None
@@ -226,6 +227,132 @@ def get_stats():
             
     return stats
 
+@app.get("/api/cameras/list")
+def list_cameras():
+    """List all camera folders"""
+    if not os.path.exists(CAMERAS_FOLDER):
+        return []
+    try:
+        cameras = [
+            d for d in os.listdir(CAMERAS_FOLDER)
+            if os.path.isdir(os.path.join(CAMERAS_FOLDER, d))
+        ]
+        return sorted(cameras)
+    except Exception as e:
+        print(f"Error listing cameras: {e}")
+        return []
+
+@app.get("/api/cameras/{camera_name}/images")
+def list_camera_images(camera_name: str):
+    """List all images in a camera folder"""
+    camera_path = os.path.join(CAMERAS_FOLDER, camera_name)
+    if not os.path.exists(camera_path) or not os.path.isdir(camera_path):
+        raise HTTPException(status_code=404, detail="Camera not found")
+    
+    try:
+        images = [
+            f for f in os.listdir(camera_path)
+            if os.path.isfile(os.path.join(camera_path, f)) and 
+            f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
+        ]
+        return sorted(images, reverse=True)
+    except Exception as e:
+        print(f"Error listing images for camera {camera_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cameras/{camera_name}/image/{image_filename}")
+def get_camera_image(camera_name: str, image_filename: str):
+    """Serve an image from a camera folder"""
+    image_path = os.path.join(CAMERAS_FOLDER, camera_name, image_filename)
+    
+    real_path = os.path.realpath(image_path)
+    real_camera_path = os.path.realpath(os.path.join(CAMERAS_FOLDER, camera_name))
+    if not real_path.startswith(real_camera_path):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    try:
+        with open(image_path, 'rb') as f:
+            img_data = f.read()
+        
+        ext = os.path.splitext(image_filename)[1].lower()
+        content_type_map = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.webp': 'image/webp',
+            '.bmp': 'image/bmp',
+            '.gif': 'image/gif'
+        }
+        content_type = content_type_map.get(ext, 'image/jpeg')
+        
+        return Response(content=img_data, media_type=content_type)
+    except Exception as e:
+        print(f"Error serving image {image_filename} from camera {camera_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def process_camera_image(camera_name: str, image_filename: str):
+    """Background worker to index camera image - same pattern as process_video_loop"""
+    image_path = os.path.join(CAMERAS_FOLDER, camera_name, image_filename)
+    
+    real_path = os.path.realpath(image_path)
+    real_camera_path = os.path.realpath(os.path.join(CAMERAS_FOLDER, camera_name))
+    if not real_path.startswith(real_camera_path):
+        asyncio.run(broadcast_ws_message({"type": "error", "msg": f"Access denied: {image_filename}"}))
+        return
+    
+    if not os.path.exists(image_path):
+        asyncio.run(broadcast_ws_message({"type": "error", "msg": f"Image not found: {image_filename}"}))
+        return
+    
+    try:
+        asyncio.run(broadcast_ws_message({"type": "info", "msg": f"Indexing {image_filename} from {camera_name}..."}))
+        
+        img = Image.open(image_path).convert('RGB')
+        vector = model_clip.encode(img).tolist()
+        
+        image_id = str(uuid.uuid4())
+        
+        img_byte_arr = BytesIO()
+        img.save(img_byte_arr, format='WEBP', quality=85)
+        img_byte_arr.seek(0)
+        img_size = img_byte_arr.getbuffer().nbytes
+        
+        client_minio.put_object(
+            BUCKET_NAME,
+            f"{image_id}.webp",
+            img_byte_arr,
+            length=img_size,
+            content_type="image/webp"
+        )
+        
+        client_qdrant.upsert(
+            collection_name=COLLECTION_NAME,
+            points=[PointStruct(
+                id=image_id,
+                vector=vector,
+                payload={"Cam": camera_name, "Frame": image_filename, "session": "camera"}
+            )]
+        )
+        
+        asyncio.run(broadcast_ws_message({"type": "success", "msg": f"Indexed {image_filename} from {camera_name}"}))
+    except Exception as e:
+        print(f"Error indexing image {image_filename} from camera {camera_name}: {e}")
+        asyncio.run(broadcast_ws_message({"type": "error", "msg": f"Failed to index {image_filename}: {str(e)}"}))
+
+@app.post("/api/cameras/{camera_name}/image/{image_filename}/index")
+def index_camera_image(camera_name: str, image_filename: str):
+    """Start background indexing of camera image (processes like video frames)"""
+    try:
+        # Start background processing thread, similar to video capture
+        threading.Thread(target=process_camera_image, args=(camera_name, image_filename)).start()
+        return {"status": "ok", "message": f"Indexing {image_filename} in background..."}
+    except Exception as e:
+        print(f"Error starting index job: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/cameras")
 def get_cameras():
     cams = set()
@@ -311,23 +438,13 @@ def search_endpoint(
         
     filter_conditions = []
     
-    def parse_value(v):
-        v = v.strip()
-        try:
-            return int(v)
-        except ValueError:
-            try:
-                return float(v)
-            except ValueError:
-                return v
-
     if cameras:
-        cam_list = [parse_value(c) for c in cameras.split(",") if c.strip()]
+        cam_list = [c.strip() for c in cameras.split(",") if c.strip()]
         if cam_list:
             filter_conditions.append(FieldCondition(key="Cam", match=MatchAny(any=cam_list)))
             
     if frames:
-        frame_list = [parse_value(c) for c in frames.split(",") if c.strip()]
+        frame_list = [c.strip() for c in frames.split(",") if c.strip()]
         if frame_list:
             filter_conditions.append(FieldCondition(key="Frame", match=MatchAny(any=frame_list)))
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, BarChart2, Video, Upload, Trash2, StopCircle, RefreshCw, X, Play, Image as ImageIcon, Sun, Moon } from 'lucide-react';
+import { Search, BarChart2, Video, Upload, Trash2, StopCircle, RefreshCw, X, Play, Image as ImageIcon, Sun, Moon, Camera } from 'lucide-react';
 import './index.css';
+import CamerasTab from './CamerasTab';
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 const WS_BASE = import.meta.env.VITE_WS_URL || "ws://localhost:8000/api/ws";
@@ -11,6 +12,7 @@ const TRANSLATIONS = {
     tab_search: "Image Search",
     tab_dash: "Dashboard",
     tab_capture: "Capture & Detect",
+    tab_cameras: "Live Cameras",
     delete_session: "Delete Session Data",
     search_desc: "Search across the ingested dataset using Text Queries, Image References, or recursively use specific images.",
     text_desc: "Text Description",
@@ -52,6 +54,7 @@ const TRANSLATIONS = {
     tab_search: "البحث عن الصور",
     tab_dash: "لوحة التحكم",
     tab_capture: "الالتقاط والكشف",
+    tab_cameras: "الكاميرات المباشرة",
     delete_session: "حذف بيانات الجلسة",
     search_desc: "ابحث في مجموعة البيانات باستخدام النصوص، أو الصور، أو بشكل تكراري.",
     text_desc: "وصف نصي",
@@ -161,12 +164,16 @@ export default function App() {
         <button className={`tab ${activeTab === 'capture' ? 'active' : ''}`} onClick={() => setActiveTab('capture')}>
           <Video size={18} style={{marginRight: 6, verticalAlign: 'text-bottom'}}/> {t.tab_capture}
         </button>
+        <button className={`tab ${activeTab === 'cameras' ? 'active' : ''}`} onClick={() => setActiveTab('cameras')}>
+          <Camera size={18} style={{marginRight: 6, verticalAlign: 'text-bottom'}}/> {t.tab_cameras}
+        </button>
       </div>
 
       <main>
         {activeTab === 'search' && <SearchTab t={t} onImageClick={(id) => setSelectedImage(`${API_BASE}/image/${id}`)} />}
         {activeTab === 'dash' && <DashTab t={t} />}
         {activeTab === 'capture' && <CaptureTab t={t} onImageClick={(id) => setSelectedImage(`${API_BASE}/image/${id}`)} />}
+        {activeTab === 'cameras' && <CamerasTab t={t} onImageClick={(id) => setSelectedImage(`${API_BASE}/cameras/${id}`)} />}
       </main>
 
       <ImageModal src={selectedImage} onClose={() => setSelectedImage(null)} />
