@@ -189,7 +189,7 @@ export default function CamerasTab({ t, onImageClick }) {
                         src={`${API_BASE}/cameras/${selectedCamera}/image/${img}`} 
                         alt={img}
                         loading="lazy"
-                        onClick={() => onImageClick(img)}
+                        onClick={() => onImageClick(`${API_BASE}/cameras/${selectedCamera}/image/${img}`)}
                         style={{cursor: 'pointer'}}
                       />
                       <div className="image-overlay">

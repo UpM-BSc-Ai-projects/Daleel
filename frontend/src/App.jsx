@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, BarChart2, Video, Upload, Trash2, StopCircle, RefreshCw, X, Play, Image as ImageIcon, Sun, Moon, Camera } from 'lucide-react';
+import { Search, BarChart2, Video, Upload, Trash2, StopCircle, RefreshCw, X, Play, Image as ImageIcon, Sun, Moon, Filter, Info, Bookmark, RotateCcw, ChevronDown, Activity, Mic, MicOff, Camera } from 'lucide-react';
 import './index.css';
 import CamerasTab from './CamerasTab';
 
@@ -8,7 +8,7 @@ const WS_BASE = import.meta.env.VITE_WS_URL || "ws://localhost:8000/api/ws";
 
 const TRANSLATIONS = {
   en: {
-    app_title: "Multi-Modal Image Search",
+    app_title: "Daleel",
     tab_search: "Image Search",
     tab_dash: "Dashboard",
     tab_capture: "Capture & Detect",
@@ -24,7 +24,7 @@ const TRANSLATIONS = {
     cameras: "Select Cameras",
     frames: "Frames (comma separated)",
     threshold: "Similarity Threshold",
-    execute_search: "Execute Search",
+    execute_search: "Start Search",
     search_results: "Search Results",
     no_results: "No results found or waiting for search.",
     query_this: "Query This Image",
@@ -47,10 +47,28 @@ const TRANSLATIONS = {
     start_proc: "Start Processing",
     stop_proc: "Stop Processing",
     logs: "System Logs",
-    captures: "Session Captures"
+    captures: "Session Captures",
+    browse_images: "Browse Images",
+    add_images: "Add Images",
+    browse_files: "Browse Files",
+    change_video: "Change Video",
+    conf_thresh: "Confidence Threshold",
+    reset_all: "Reset All",
+    time_range: "Time Range (Frames)",
+    all_frames: "All Frames",
+    specify_range: "Specify Range",
+    from: "From",
+    to: "To",
+    frame_note: "Frame numbers must be positive integers.",
+    broad_search: "Low (broad search)",
+    strict_match: "High (strict match)",
+    info_accuracy: "Higher values return more accurate but fewer results.",
+    save_filters: "Save Filters",
+    clear_filters: "Clear Filters",
+    select_cameras: "Select cameras"
   },
   ar: {
-    app_title: "البحث المتعدد الوسائط للصور",
+    app_title: "دليل",
     tab_search: "البحث عن الصور",
     tab_dash: "لوحة التحكم",
     tab_capture: "الالتقاط والكشف",
@@ -66,7 +84,7 @@ const TRANSLATIONS = {
     cameras: "اختر الكاميرات",
     frames: "الإطارات (مفصولة بفاصلة)",
     threshold: "عتبة التشابه",
-    execute_search: "تنفيذ البحث",
+    execute_search: "البحث",
     search_results: "نتائج البحث",
     no_results: "لا توجد نتائج أو بانتظار البحث.",
     query_this: "البحث بهذه الصورة",
@@ -89,7 +107,25 @@ const TRANSLATIONS = {
     start_proc: "بدء المعالجة",
     stop_proc: "إيقاف المعالجة",
     logs: "سجلات النظام",
-    captures: "التقاطات الجلسة"
+    captures: "التقاطات الجلسة",
+    browse_images: "تصفح الصور",
+    add_images: "إضافة صور",
+    browse_files: "تصفح الملفات",
+    change_video: "تغيير الفيديو",
+    conf_thresh: "عتبة الثقة",
+    reset_all: "إعادة ضبط الكل",
+    time_range: "نطاق الوقت (الإطارات)",
+    all_frames: "كل الإطارات",
+    specify_range: "تحديد النطاق",
+    from: "من",
+    to: "إلى",
+    frame_note: "يجب أن تكون أرقام الإطارات أعداداً صحيحة موجبة.",
+    broad_search: "منخفض (بحث واسع)",
+    strict_match: "عالي (مطابقة دقيقة)",
+    info_accuracy: "القيم الأعلى تعطي نتائج أكثر دقة ولكن أقل عدداً.",
+    save_filters: "حفظ الفلاتر",
+    clear_filters: "مسح الفلاتر",
+    select_cameras: "اختر الكاميرات"
   }
 };
 
@@ -134,11 +170,27 @@ export default function App() {
   return (
     <div className="app-container">
       <header className="top-header">
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: 0, flex: 1 }}>
           <Search size={32} />
           {t.app_title}
         </h1>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        
+        <div className="tabs" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0, justifyContent: 'center', flex: 2, gap: '4rem' }}>
+          <button className={`tab ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')}>
+            <Search size={18} style={{marginRight: 6, verticalAlign: 'text-bottom'}}/> {t.tab_search}
+          </button>
+          <button className={`tab ${activeTab === 'dash' ? 'active' : ''}`} onClick={() => setActiveTab('dash')}>
+            <BarChart2 size={18} style={{marginRight: 6, verticalAlign: 'text-bottom'}}/> {t.tab_dash}
+          </button>
+          <button className={`tab ${activeTab === 'capture' ? 'active' : ''}`} onClick={() => setActiveTab('capture')}>
+            <Video size={18} style={{marginRight: 6, verticalAlign: 'text-bottom'}}/> {t.tab_capture}
+          </button>
+          <button className={`tab ${activeTab === 'cameras' ? 'active' : ''}`} onClick={() => setActiveTab('cameras')}>
+            <Camera size={18} style={{marginRight: 6, verticalAlign: 'text-bottom'}}/> {t.tab_cameras}
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flex: 1, justifyContent: 'flex-end' }}>
           <button 
             onClick={toggleTheme} 
             className="btn btn-secondary" 
@@ -154,26 +206,11 @@ export default function App() {
         </div>
       </header>
 
-      <div className="tabs">
-        <button className={`tab ${activeTab === 'search' ? 'active' : ''}`} onClick={() => setActiveTab('search')}>
-          <Search size={18} style={{marginRight: 6, verticalAlign: 'text-bottom'}}/> {t.tab_search}
-        </button>
-        <button className={`tab ${activeTab === 'dash' ? 'active' : ''}`} onClick={() => setActiveTab('dash')}>
-          <BarChart2 size={18} style={{marginRight: 6, verticalAlign: 'text-bottom'}}/> {t.tab_dash}
-        </button>
-        <button className={`tab ${activeTab === 'capture' ? 'active' : ''}`} onClick={() => setActiveTab('capture')}>
-          <Video size={18} style={{marginRight: 6, verticalAlign: 'text-bottom'}}/> {t.tab_capture}
-        </button>
-        <button className={`tab ${activeTab === 'cameras' ? 'active' : ''}`} onClick={() => setActiveTab('cameras')}>
-          <Camera size={18} style={{marginRight: 6, verticalAlign: 'text-bottom'}}/> {t.tab_cameras}
-        </button>
-      </div>
-
       <main>
         {activeTab === 'search' && <SearchTab t={t} onImageClick={(id) => setSelectedImage(`${API_BASE}/image/${id}`)} />}
         {activeTab === 'dash' && <DashTab t={t} />}
         {activeTab === 'capture' && <CaptureTab t={t} onImageClick={(id) => setSelectedImage(`${API_BASE}/image/${id}`)} />}
-        {activeTab === 'cameras' && <CamerasTab t={t} onImageClick={(id) => setSelectedImage(`${API_BASE}/cameras/${id}`)} />}
+        {activeTab === 'cameras' && <CamerasTab t={t} onImageClick={(url) => setSelectedImage(url)} />}
       </main>
 
       <ImageModal src={selectedImage} onClose={() => setSelectedImage(null)} />
@@ -188,13 +225,67 @@ function SearchTab({ t, onImageClick }) {
   
   const [availCameras, setAvailCameras] = useState([]);
   const [selectedCameras, setSelectedCameras] = useState([]);
-  const [frames, setFrames] = useState('');
+  const [isRangeActive, setIsRangeActive] = useState(false);
+  const [fromFrame, setFromFrame] = useState('100');
+  const [toFrame, setToFrame] = useState('5000');
   const [threshold, setThreshold] = useState(0.0);
+  const [showCamDropdown, setShowCamDropdown] = useState(false);
   
   const [results, setResults] = useState([]);
   const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
   const fileInputRef = useRef(null);
+
+  const toggleRecording = async () => {
+    if (isRecording) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorderRef.current = new MediaRecorder(stream);
+        audioChunksRef.current = [];
+        
+        mediaRecorderRef.current.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+        
+        mediaRecorderRef.current.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+          const formData = new FormData();
+          formData.append('file', audioBlob, 'recording.wav');
+          formData.append('lang', document.documentElement.lang || 'en');
+          
+          try {
+            const res = await fetch(`${API_BASE}/stt`, { method: 'POST', body: formData });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.text) {
+                setTextQuery(prev => prev ? `${prev} ${data.text}` : data.text);
+              }
+            }
+          } catch (err) {
+            console.error("STT Error:", err);
+          }
+          
+          stream.getTracks().forEach(track => track.stop());
+        };
+        
+        mediaRecorderRef.current.start();
+        setIsRecording(true);
+      } catch (err) {
+        console.error("Microphone access denied:", err);
+        alert("Microphone access denied. Please check your permissions.");
+      }
+    }
+  };
 
   useEffect(() => {
     fetch(`${API_BASE}/cameras`).then(res => res.json()).then(data => {
@@ -207,7 +298,9 @@ function SearchTab({ t, onImageClick }) {
     setFiles([]);
     setRecursiveId(null);
     setSelectedCameras([]);
-    setFrames('');
+    setIsRangeActive(false);
+    setFromFrame('100');
+    setToFrame('5000');
     setThreshold(0.0);
     setResults([]);
     setLimit(20);
@@ -223,7 +316,10 @@ function SearchTab({ t, onImageClick }) {
     }
     if (recursiveId) formData.append('recursive_id', recursiveId);
     formData.append('cameras', selectedCameras.join(','));
-    formData.append('frames', frames);
+    if (isRangeActive) {
+      if (fromFrame) formData.append('from_time', fromFrame);
+      if (toFrame) formData.append('to_time', toFrame);
+    }
     formData.append('score_threshold', threshold);
     formData.append('limit', currentLimit);
 
@@ -242,17 +338,29 @@ function SearchTab({ t, onImageClick }) {
 
 
   return (
-    <div className="grid" style={{ gridTemplateColumns: '1fr 300px' }}>
-      <div className="glass-panel">
-        <p>{t.search_desc}</p>
+    <div className="grid search-main-grid" style={{ gridTemplateColumns: '1fr 350px', gap: '2rem', alignItems: 'stretch' }}>
+      <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div className="search-guide-note">
+          <Info size={18} />
+          <p>{t.search_desc}</p>
+        </div>
         
         <h3 style={{marginTop: '1.5rem'}}>{t.text_desc}</h3>
-        <input 
-          type="text" 
-          value={textQuery} 
-          onChange={e => setTextQuery(e.target.value)} 
-          placeholder={t.text_placeholder} 
-        />
+        <div className="search-input-wrapper">
+          <input 
+            type="text" 
+            value={textQuery} 
+            onChange={e => setTextQuery(e.target.value)} 
+            placeholder={t.text_placeholder} 
+          />
+          <button 
+            className={`mic-btn ${isRecording ? 'recording' : ''}`}
+            onClick={toggleRecording}
+            title={isRecording ? "Stop Recording" : "Voice Search"}
+          >
+            {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+          </button>
+        </div>
 
         <div style={{ margin: '1.5rem 0' }}>
           {recursiveId ? (
@@ -261,86 +369,182 @@ function SearchTab({ t, onImageClick }) {
               <button className="btn btn-secondary" onClick={() => setRecursiveId(null)}><X size={16}/> {t.clear}</button>
             </div>
           ) : (
-            <div className="file-drop-area">
-              <Upload size={24} style={{ marginBottom: 8, color: '#94a3b8' }}/>
-              <div>{files.length > 0 ? `${files.length} images selected` : t.upload_image}</div>
-              {files.length > 0 && (
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px', justifyContent: 'center' }}>
-                  {files.map((f, i) => (
-                    <div key={i} style={{ position: 'relative' }}>
-                      <img src={URL.createObjectURL(f)} alt="preview" style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '4px' }} />
-                      <button 
-                        style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', borderRadius: '50%', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer', fontSize: '10px', padding: 0 }}
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setFiles(files.filter((_, index) => index !== i)); }}
-                      >
-                        <X size={10} />
-                      </button>
+            <div className="file-drop-area" style={{ padding: files.length > 0 ? '1rem' : '2.5rem' }}>
+              {files.length > 0 ? (
+                <div style={{ width: '100%' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                       <ImageIcon size={18} style={{ color: '#94a3b8' }}/>
+                       <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{files.length} {t.images_selected || 'Images Selected'}</span>
+                     </div>
+                     <button className="reset-link" onClick={() => setFiles([])} style={{ fontSize: '0.8rem', color: 'var(--danger-color)' }}>{t.clear_all || 'Clear All'}</button>
+                  </div>
+                  <div className="filmstrip-container" style={{ background: 'rgba(0,0,0,0.03)', borderRadius: '12px', padding: '10px' }}>
+                    {files.map((f, i) => (
+                      <div key={i} className="image-preview-card filmstrip-card" style={{ width: '120px', height: '120px' }}>
+                        <img src={URL.createObjectURL(f)} alt="preview" />
+                        <button 
+                          className="remove-preview-btn tiny"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setFiles(files.filter((_, index) => index !== i)); }}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="filmstrip-card add-more-slot" onClick={() => fileInputRef.current?.click()}>
+                       <Upload size={20} />
+                       <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{t.add || 'Add'}</span>
                     </div>
-                  ))}
+                  </div>
+                  <input type="file" accept="image/*" multiple onChange={e => setFiles([...files, ...Array.from(e.target.files)])} ref={fileInputRef} style={{ display: 'none' }}/>
                 </div>
+              ) : (
+                <>
+                  <Upload size={24} style={{ marginBottom: 8, color: '#94a3b8' }}/>
+                  <div>{t.upload_image}</div>
+                  <div className="file-input-wrapper" style={{ marginTop: 10 }}>
+                    <button className="btn btn-secondary">{t.browse_images}</button>
+                    <input type="file" accept="image/*" multiple onChange={e => setFiles([...files, ...Array.from(e.target.files)])} ref={fileInputRef}/>
+                  </div>
+                </>
               )}
-              <div className="file-input-wrapper" style={{ marginTop: 10 }}>
-                <button className="btn btn-secondary">{files.length > 0 ? 'Add Images' : 'Browse Images'}</button>
-                <input type="file" accept="image/*" multiple onChange={e => setFiles([...files, ...Array.from(e.target.files)])} ref={fileInputRef}/>
-              </div>
             </div>
           )}
         </div>
       </div>
 
-      <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <h3>{t.filters}</h3>
-        <div>
-          <label style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>{t.cameras}</label>
-          {availCameras.length > 0 ? (
-             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '150px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', padding: '0.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', marginTop: '0.5rem' }}>
-               {availCameras.map(c => (
-                 <label key={c} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
-                   <input 
-                     type="checkbox" 
-                     value={c} 
-                     checked={selectedCameras.includes(c)}
-                     onChange={(e) => {
-                       if (e.target.checked) {
-                         setSelectedCameras([...selectedCameras, c]);
-                       } else {
-                         setSelectedCameras(selectedCameras.filter(cam => cam !== c));
-                       }
-                     }}
-                     style={{ accentColor: 'var(--primary-color)', width: '16px', height: '16px', cursor: 'pointer' }}
-                   />
-                   {c}
-                 </label>
-               ))}
-             </div>
-          ) : (
-             <input type="text" value={selectedCameras.join(',')} onChange={e => setSelectedCameras(e.target.value.split(','))} placeholder="cam1,cam2" style={{ marginTop: '0.5rem' }} />
+      <div className="glass-panel search-filters-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%' }}>
+        <div className="filter-header">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+            <Filter size={18} />
+            {t.filters}
+          </h3>
+        </div>
+
+        {/* Cameras Section */}
+        <div className="filter-section">
+          <label className="filter-label">
+            {t.cameras}
+          </label>
+          <div className="custom-select-container">
+            <div className="custom-select-box" onClick={() => setShowCamDropdown(!showCamDropdown)}>
+              <span className={selectedCameras.length === 0 ? 'placeholder' : ''}>
+                {selectedCameras.length === 0 ? t.select_cameras : `${selectedCameras.length} selected`}
+              </span>
+              <ChevronDown size={16} />
+            </div>
+            {showCamDropdown && (
+              <div className="custom-dropdown glass-panel">
+                {availCameras.map(c => (
+                  <label key={c} className="dropdown-item">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedCameras.includes(c)}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedCameras([...selectedCameras, c]);
+                        else setSelectedCameras(selectedCameras.filter(cam => cam !== c));
+                      }}
+                    />
+                    {c}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+          {selectedCameras.length > 0 && (
+            <div className="camera-tags">
+              {selectedCameras.map(c => (
+                <span key={c} className="tag">
+                  {c} <X size={12} onClick={(e) => { e.stopPropagation(); setSelectedCameras(selectedCameras.filter(cam => cam !== c)); }} />
+                </span>
+              ))}
+            </div>
           )}
         </div>
-        <div>
-          <label style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>{t.frames}</label>
-          <input type="text" value={frames} onChange={e => setFrames(e.target.value)} />
-        </div>
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <label style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>{t.threshold}</label>
-            <span style={{fontSize: '0.85rem', fontWeight: 'bold'}}>{Math.round(threshold * 100)}%</span>
+
+        {/* Time Range Section */}
+        <div className="filter-section">
+          <label className="filter-label">
+            {t.time_range}
+          </label>
+          <div className="radio-group">
+            <label className="radio-label">
+              <input type="radio" checked={!isRangeActive} onChange={() => setIsRangeActive(false)} />
+              <span className="radio-custom"></span>
+              {t.all_frames}
+            </label>
+            <label className="radio-label">
+              <input type="radio" checked={isRangeActive} onChange={() => setIsRangeActive(true)} />
+              <span className="radio-custom"></span>
+              {t.specify_range}
+            </label>
           </div>
-          <input type="range" min="0" max="1" step="0.05" value={threshold} onChange={e => setThreshold(parseFloat(e.target.value))} style={{ width: '100%', marginTop: '0.5rem' }} />
+          {isRangeActive && (
+            <div className="from-to-inputs">
+              <div className="input-group">
+                <label>{t.from}</label>
+                <input type="number" value={fromFrame} onChange={e => setFromFrame(e.target.value)} placeholder="100" />
+              </div>
+              <div className="input-group">
+                <label>{t.to}</label>
+                <input type="number" value={toFrame} onChange={e => setToFrame(e.target.value)} placeholder="5000" />
+              </div>
+            </div>
+          )}
+          <p className="helper-text">{t.frame_note}</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
-          <button className="btn btn-secondary" style={{flex: 1}} onClick={handleClear} disabled={loading}>
-            <X size={18} />
-            {t.clear || "Clear"}
+
+        {/* Similarity Threshold Section */}
+        <div className="filter-section">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <label className="filter-label" style={{ marginBottom: 0 }}>
+              {t.threshold}
+            </label>
+            <span className="threshold-value">{Math.round(threshold * 100)}%</span>
+          </div>
+          <div className="slider-wrapper">
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.05" 
+              value={threshold} 
+              onChange={e => setThreshold(parseFloat(e.target.value))} 
+              className="custom-slider" 
+              style={{
+                background: `linear-gradient(to right, #10b981 0%, #10b981 ${threshold * 100}%, var(--border-color) ${threshold * 100}%, var(--border-color) 100%)`
+              }}
+            />
+            <div className="slider-marks">
+              <span>0%</span>
+              <span>25%</span>
+              <span>50%</span>
+              <span>75%</span>
+              <span>100%</span>
+            </div>
+            <div className="slider-labels">
+              <span>{t.broad_search}</span>
+              <span>{t.strict_match}</span>
+            </div>
+          </div>
+        </div>
+
+
+
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: 'auto' }}>
+          <button className="btn btn-outline" style={{ flex: 1 }} onClick={handleClear} disabled={loading}>
+            <RotateCcw size={18} />
+            {t.clear}
           </button>
-          <button className="btn btn-primary" style={{flex: 2}} onClick={() => {setLimit(20); handleSearch(20);}} disabled={loading}>
-            {loading ? <RefreshCw className="spin" size={18} /> : <Search size={18} />}
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { setLimit(20); handleSearch(20); }} disabled={loading}>
+            <Search size={18} />
             {t.execute_search}
           </button>
         </div>
       </div>
 
-      <div className="glass-panel" style={{ gridColumn: '1 / -1' }}>
+      <div className="glass-panel" style={{ gridColumn: '1 / -1', marginTop: '2rem' }}>
         <h2>{t.search_results}</h2>
         {results.length > 0 ? (
           <>
@@ -522,7 +726,7 @@ function CaptureTab({ t, onImageClick }) {
           <Upload size={24} style={{ marginBottom: 8, color: '#94a3b8' }}/>
           <div>{vidFile ? vidFile.name : t.video_upload}</div>
           <div className="file-input-wrapper" style={{ marginTop: 10 }}>
-            <button className="btn btn-secondary">{vidFile ? 'Change Video' : 'Browse Files'}</button>
+            <button className="btn btn-secondary">{vidFile ? t.change_video : t.browse_files}</button>
             <input type="file" accept="video/*" onChange={e => setVidFile(e.target.files[0])} />
           </div>
         </div>
@@ -537,7 +741,7 @@ function CaptureTab({ t, onImageClick }) {
 
         <div>
            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-             <label style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>Confidence Threshold</label>
+             <label style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>{t.conf_thresh}</label>
              <span style={{fontSize: '0.85rem', fontWeight: 'bold'}}>{Math.round(confidence * 100)}%</span>
            </div>
            <input type="range" min="0" max="1" step="0.05" value={confidence} onChange={e => setConfidence(parseFloat(e.target.value))} style={{ width: '100%', marginTop: '0.5rem' }} />

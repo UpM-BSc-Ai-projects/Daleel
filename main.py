@@ -6,7 +6,7 @@ import numpy as np
 from io import BytesIO
 from minio import Minio
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchAny, PointStruct
+from qdrant_client.models import Filter, FieldCondition, MatchAny, PointStruct, Range
 from sentence_transformers import SentenceTransformer
 import cv2
 import time
@@ -22,6 +22,7 @@ import threading
 import json
 import asyncio
 from typing import List
+import httpx
 
 load_dotenv()
 
@@ -152,7 +153,7 @@ def process_video_loop(video_path: str, interval: float, yolo_conf: float):
                             points=[PointStruct(
                                 id=image_id,
                                 vector=vector,
-                                payload={"Cam": "Live", "Frame": f"Time_{current_sec}s", "session": "active"}
+                                payload={"Cam": "Live", "Frame": f"Time_{current_sec}s", "timestamp": current_sec, "session": "active"}
                             )]
                         )
                         
@@ -376,6 +377,43 @@ def get_cameras():
         pass
     return sorted(list(cams), key=str)
 
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+
+@app.post("/api/stt")
+async def speech_to_text(file: UploadFile = File(...), lang: str = Form("en")):
+    if not MISTRAL_API_KEY:
+        raise HTTPException(status_code=500, detail="Mistral API key not configured")
+    
+    audio_data = await file.read()
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            files = {'file': (file.filename, audio_data, file.content_type or 'audio/wav')}
+            data = {
+                'model': 'voxtral-mini-latest',
+                'language': lang
+            }
+            headers = {'Authorization': f'Bearer {MISTRAL_API_KEY}'}
+            
+            response = await client.post(
+                "https://api.mistral.ai/v1/audio/transcriptions",
+                files=files,
+                data=data,
+                headers=headers,
+                timeout=60.0
+            )
+            
+            if response.status_code != 200:
+                print(f"Mistral error: {response.text}")
+                raise HTTPException(status_code=response.status_code, detail="Error from Mistral STT API")
+            
+            result = response.json()
+            return {"text": result.get("text", "")}
+            
+        except Exception as e:
+            print(f"STT Error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/search")
 def search_endpoint(
     text_query: str = Form(""),
@@ -384,6 +422,8 @@ def search_endpoint(
     frames: str = Form(""),
     score_threshold: float = Form(0.0),
     limit: int = Form(20),
+    from_time: float = Form(None),
+    to_time: float = Form(None),
     files: List[UploadFile] = File([])
 ):
     vectors = []
@@ -441,15 +481,28 @@ def search_endpoint(
         
     filter_conditions = []
     
+    def parse_value(v):
+        v = v.strip()
+        try:
+            return int(v)
+        except ValueError:
+            try:
+                return float(v)
+            except ValueError:
+                return v
+
     if cameras:
-        cam_list = [c.strip() for c in cameras.split(",") if c.strip()]
+        cam_list = [parse_value(c) for c in cameras.split(",") if c.strip()]
         if cam_list:
             filter_conditions.append(FieldCondition(key="Cam", match=MatchAny(any=cam_list)))
             
     if frames:
-        frame_list = [c.strip() for c in frames.split(",") if c.strip()]
+        frame_list = [parse_value(c) for c in frames.split(",") if c.strip()]
         if frame_list:
             filter_conditions.append(FieldCondition(key="Frame", match=MatchAny(any=frame_list)))
+
+    if from_time is not None or to_time is not None:
+        filter_conditions.append(FieldCondition(key="timestamp", range=Range(gte=from_time, lte=to_time)))
 
     query_filter = Filter(must=filter_conditions) if filter_conditions else None
     thresh = score_threshold if score_threshold > 0.0 else None
