@@ -2,12 +2,12 @@ import os
 from dotenv import load_dotenv
 import uuid
 import torch
+import torch.nn.functional as F
 import numpy as np
 from io import BytesIO
 from minio import Minio
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchAny, PointStruct, Range
-from sentence_transformers import SentenceTransformer
 import cv2
 import time
 from ultralytics import YOLO
@@ -22,24 +22,46 @@ import threading
 import json
 import asyncio
 from typing import List
+from pathlib import Path
 import httpx
 
+# BoxMOT imports
+from boxmot.reid.core import ReID
+from boxmot.reid.backbones.clip.make_model_clipreid import load_clip_to_cpu, TextEncoder
+from boxmot.reid.backbones.clip.clip import clip
+
+# RealESRGAN imports
+from basicsr.archs.rrdbnet_arch import RRDBNet
+from realesrgan import RealESRGANer
+
 load_dotenv()
+
+# ============================================================
+#  CONFIGURATION
+# ============================================================
 
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin123")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME", "image-dataset")
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "images")
-MODEL_NAME = os.getenv("CLIP_MODEL", "sentence-transformers/clip-ViT-B-32")
+REID_MODEL_PATH = os.getenv("REID_MODEL", "clip_market1501.pt")
+SR_MODEL_PATH = os.getenv("SR_MODEL", "RealESRGAN_x4plus.pth")
 YOLO_MODEL_PATH = os.getenv("YOLO_MODEL", "yolo_person_yv11_best.pt")
 CAMERAS_FOLDER = os.getenv("CAMERAS_FOLDER", "cameras")
 
+# Super-Resolution Configuration
+USE_UPSCALER = True  # Set to False to disable upscaling
+
+# Global instances
 client_minio = None
 client_qdrant = None
-model_clip = None
+text_encoder = None
+reid_extractor = None
+upscaler = None
 model_yolo = None
 
 # Global state for capturing video
@@ -47,13 +69,245 @@ capture_active = False
 capture_logs = []
 capture_websockets = []
 
+
+# ============================================================
+#  BOXMOT TEXT ENCODER
+# ============================================================
+
+class BoxmotTextEncoder:
+    """Text encoder using fine-tuned CLIP-ReID weights."""
+    
+    def __init__(self, model_path: str, device: str = "cuda"):
+        self.device = device
+        
+        print(f"\n{'=' * 70}")
+        print(f"LOADING TEXT ENCODER (CLIP ViT-B/16)")
+        print(f"{'=' * 70}")
+        print(f"  Model: {Path(model_path).name}")
+        print(f"  Device: {device}")
+        
+        # Load base CLIP model structure
+        clip_model = load_clip_to_cpu(
+            backbone_name="ViT-B-16",
+            h_resolution=16,
+            w_resolution=8,
+            vision_stride_size=16,
+        )
+        if device == "cpu":
+            clip_model.float()
+        clip_model.to(device)
+        self.clip_model = clip_model
+        
+        # Build TextEncoder
+        text_encoder = TextEncoder(clip_model)
+        
+        # Load fine-tuned weights
+        state_dict = torch.load(model_path, map_location="cpu")
+        text_enc_weights = {
+            k[len("text_encoder."):]: v
+            for k, v in state_dict.items()
+            if k.startswith("text_encoder.")
+        }
+        
+        if text_enc_weights:
+            text_encoder.load_state_dict(text_enc_weights, strict=True)
+            print(f"  ✓ Loaded fine-tuned text encoder weights")
+        else:
+            print(f"  ℹ Using base CLIP weights (no fine-tuning found)")
+        
+        text_encoder.eval().to(device)
+        self.text_encoder = text_encoder
+        
+        print(f"  ✓ Produces 512-dim embeddings")
+        print(f"{'=' * 70}\n")
+    
+    def extract_text(self, text: str) -> np.ndarray:
+        """Extract 512-dim text embedding."""
+        with torch.no_grad():
+            tokenized = clip.tokenize([text]).to(self.device)
+            token_emb = self.clip_model.token_embedding(tokenized).type(
+                self.clip_model.dtype
+            )
+            features = self.text_encoder(token_emb, tokenized)
+            features = F.normalize(features.float(), dim=-1)
+            return features.cpu().numpy()[0]
+
+
+# ============================================================
+#  BOXMOT REID EXTRACTOR
+# ============================================================
+
+class BoxmotReIDExtractor:
+    """Extract dual embeddings (1280-dim full + 512-dim semantic)."""
+    
+    def __init__(self, model_path: str, device: str = "cuda"):
+        self.device = device
+        
+        print(f"\n{'=' * 70}")
+        print(f"LOADING REID MODEL")
+        print(f"{'=' * 70}")
+        print(f"  Model: {Path(model_path).name}")
+        print(f"  Device: {device}")
+        
+        self.reid = ReID(
+            weights=Path(model_path),
+            device=torch.device(device),
+            half=False,
+        )
+        self.backend = self.reid.model
+        
+        print(f"  ✓ Model loaded successfully")
+        print(f"  ✓ Output: 1280-dim full + 512-dim semantic")
+        print(f"{'=' * 70}\n")
+    
+    def extract(self, image: np.ndarray) -> tuple:
+        """
+        Extract embeddings from BGR image.
+        
+        Returns:
+            (full_emb_1280, proj_emb_512) or (None, None)
+        """
+        h, w = image.shape[:2]
+        dets = np.array([[0, 0, w, h]], dtype=np.float32)
+        
+        crops = self.backend.get_crops(dets, image)
+        crops = self.backend.inference_preprocess(crops)
+        
+        with torch.no_grad():
+            raw = self.backend.forward(crops)
+        
+        raw = self.backend.inference_postprocess(raw)
+        
+        if raw is None or (isinstance(raw, np.ndarray) and raw.size == 0):
+            return None, None
+        
+        raw = raw[0]  # shape: (1280,)
+        feat_512 = raw[768:]
+        
+        proj_emb = feat_512 / (np.linalg.norm(feat_512) + 1e-8)
+        full_emb = raw / (np.linalg.norm(raw) + 1e-8)
+        
+        return proj_emb
+    
+    def extract_from_pil(self, pil_image: Image.Image) -> tuple:
+        """
+        Extract embeddings from PIL Image.
+        
+        Returns:
+            (full_emb_1280, proj_emb_512) or (None, None)
+        """
+        # Convert PIL to BGR numpy array
+        img_rgb = np.array(pil_image.convert('RGB'))
+        img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+        return self.extract(img_bgr)
+
+
+# ============================================================
+#  REALESRGAN UPSCALER
+# ============================================================
+
+class RealESRGANUpscaler:
+    """Super-resolution upscaler using RealESRGAN."""
+    
+    def __init__(self, model_path: str, device: str = 'cuda'):
+        self.device = device
+        
+        print(f"\n{'=' * 70}")
+        print(f"LOADING SUPER-RESOLUTION MODEL")
+        print(f"{'=' * 70}")
+        print(f"  Model: RealESRGAN_x4plus")
+        print(f"  Weights: {Path(model_path).name}")
+        print(f"  Device: {device}")
+        
+        # Initialize model
+        model = RRDBNet(
+            num_in_ch=3,
+            num_out_ch=3,
+            num_feat=64,
+            num_block=23,
+            num_grow_ch=32,
+            scale=4
+        )
+        
+        # Initialize upsampler
+        self.upsampler = RealESRGANer(
+            scale=4,
+            model_path=model_path,
+            model=model,
+            tile=0,
+            tile_pad=10,
+            pre_pad=0,
+            half=False,
+            device=device
+        )
+        
+        print(f"  ✓ Model loaded successfully")
+        print(f"{'=' * 70}\n")
+    
+    def upscale(self, image: np.ndarray) -> np.ndarray:
+        """
+        Upscale a BGR image.
+        
+        Args:
+            image: BGR image (H, W, 3)
+        
+        Returns:
+            Upscaled BGR image
+        """
+        output, _ = self.upsampler.enhance(image, outscale=4)
+        return output
+    
+    def upscale_pil(self, pil_image: Image.Image) -> Image.Image:
+        """
+        Upscale a PIL Image.
+        
+        Args:
+            pil_image: PIL Image
+        
+        Returns:
+            Upscaled PIL Image
+        """
+        # Convert PIL to BGR
+        img_rgb = np.array(pil_image.convert('RGB'))
+        img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+        
+        # Upscale
+        upscaled_bgr = self.upscale(img_bgr)
+        
+        # Convert back to PIL
+        upscaled_rgb = cv2.cvtColor(upscaled_bgr, cv2.COLOR_BGR2RGB)
+        return Image.fromarray(upscaled_rgb)
+
+
+# ============================================================
+#  FASTAPI LIFESPAN
+# ============================================================
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global client_minio, client_qdrant, model_clip, model_yolo
+    global client_minio, client_qdrant, text_encoder, reid_extractor, upscaler, model_yolo
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Loading CLIP model on {device}...")
-    model_clip = SentenceTransformer(MODEL_NAME, device=device)
+    
+    print(f"\n{'=' * 70}")
+    print(f"INITIALIZING MODELS")
+    print(f"{'=' * 70}")
+    print(f"  Device: {device}")
+    print(f"  ReID Model: {REID_MODEL_PATH}")
+    print(f"  Upscaler Enabled: {USE_UPSCALER}")
+    print(f"{'=' * 70}\n")
+    
+    # Load BoxMOT models
+    text_encoder = BoxmotTextEncoder(REID_MODEL_PATH, device)
+    reid_extractor = BoxmotReIDExtractor(REID_MODEL_PATH, device)
+    
+    # Load upscaler if enabled
+    if USE_UPSCALER:
+        if os.path.exists(SR_MODEL_PATH):
+            upscaler = RealESRGANUpscaler(SR_MODEL_PATH, device)
+        else:
+            print(f"WARNING: SR model not found at {SR_MODEL_PATH}. Upscaling disabled.")
+            upscaler = None
     
     print("Loading MinIO client...")
     client_minio = Minio(
@@ -72,7 +326,16 @@ async def lifespan(app: FastAPI):
     else:
         print("YOLO file not found!")
     
+    print(f"\n{'=' * 70}")
+    print("ALL MODELS LOADED SUCCESSFULLY")
+    print(f"{'=' * 70}\n")
+    
     yield
+
+
+# ============================================================
+#  FASTAPI APP
+# ============================================================
 
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(
@@ -83,12 +346,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ============================================================
+#  WEBSOCKET & VIDEO CAPTURE
+# ============================================================
+
 async def broadcast_ws_message(msg: dict):
     for ws in list(capture_websockets):
         try:
             await ws.send_json(msg)
         except Exception:
             capture_websockets.remove(ws)
+
 
 def process_video_loop(video_path: str, interval: float, yolo_conf: float):
     global capture_active
@@ -131,12 +400,27 @@ def process_video_loop(video_path: str, interval: float, yolo_conf: float):
                     
                     for i, box in enumerate(boxes):
                         x1, y1, x2, y2 = box.xyxy[0].tolist()
-                        crop = pil_frame.crop((x1, y1, x2, y2))
-                        image_id = str(uuid.uuid4())
-                        vector = model_clip.encode(crop).tolist()
+                        crop_original = pil_frame.crop((x1, y1, x2, y2))
                         
+                        # Decide which image to use for embedding extraction
+                        if USE_UPSCALER and upscaler is not None:
+                            # Upscale the crop for better embeddings
+                            crop_for_embedding = upscaler.upscale_pil(crop_original)
+                        else:
+                            # Use original crop
+                            crop_for_embedding = crop_original
+                        
+                        # Extract 512-dim semantic embedding using BoxMOT ReID
+                        vector_512 = reid_extractor.extract_from_pil(crop_for_embedding)
+                        
+                        if vector_512 is None:
+                            continue
+                        
+                        image_id = str(uuid.uuid4())
+                        
+                        # Save ORIGINAL (non-upscaled) image to MinIO to save space
                         img_byte_arr = BytesIO()
-                        crop.save(img_byte_arr, format='WEBP', quality=60)
+                        crop_original.save(img_byte_arr, format='WEBP', quality=60)
                         img_byte_arr.seek(0)
                         img_size = img_byte_arr.getbuffer().nbytes
                         
@@ -148,11 +432,12 @@ def process_video_loop(video_path: str, interval: float, yolo_conf: float):
                             content_type="image/webp"
                         )
                         
+                        # Store 512-dim embedding in Qdrant
                         client_qdrant.upsert(
                             collection_name=COLLECTION_NAME,
                             points=[PointStruct(
                                 id=image_id,
-                                vector=vector,
+                                vector=vector_512.tolist(),
                                 payload={"Cam": "Live", "Frame": f"Time_{current_sec}s", "timestamp": current_sec, "session": "active"}
                             )]
                         )
@@ -167,6 +452,7 @@ def process_video_loop(video_path: str, interval: float, yolo_conf: float):
     cap.release()
     capture_active = False
 
+
 @app.websocket("/api/ws/capture")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -179,6 +465,7 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         if websocket in capture_websockets:
             capture_websockets.remove(websocket)
+
 
 @app.post("/api/capture/start")
 def start_capture(file: UploadFile = File(...), interval: float = Form(5.0), conf: float = Form(0.5)):
@@ -194,11 +481,17 @@ def start_capture(file: UploadFile = File(...), interval: float = Form(5.0), con
     threading.Thread(target=process_video_loop, args=(tmp_path, interval, conf)).start()
     return {"status": "ok"}
 
+
 @app.post("/api/capture/stop")
 def stop_capture():
     global capture_active
     capture_active = False
     return {"status": "ok"}
+
+
+# ============================================================
+#  API ENDPOINTS
+# ============================================================
 
 @app.get("/api/stats")
 def get_stats():
@@ -208,7 +501,8 @@ def get_stats():
         'qdrant_status': 'Offline',
         'minio_status': 'Offline',
         'minio_size_bytes': 0,
-        'qdrant_est_bytes': 0
+        'qdrant_est_bytes': 0,
+        'upscaler_enabled': USE_UPSCALER,
     }
     
     try:
@@ -229,6 +523,7 @@ def get_stats():
             
     return stats
 
+
 @app.get("/api/cameras/list")
 def list_cameras():
     """List all camera folders"""
@@ -243,6 +538,7 @@ def list_cameras():
     except Exception as e:
         print(f"Error listing cameras: {e}")
         return []
+
 
 @app.get("/api/cameras/{camera_name}/images")
 def list_camera_images(camera_name: str):
@@ -261,6 +557,7 @@ def list_camera_images(camera_name: str):
     except Exception as e:
         print(f"Error listing images for camera {camera_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/cameras/{camera_name}/image/{image_filename}")
 def get_camera_image(camera_name: str, image_filename: str):
@@ -294,6 +591,7 @@ def get_camera_image(camera_name: str, image_filename: str):
     except Exception as e:
         print(f"Error serving image {image_filename} from camera {camera_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 def process_camera_image(camera_name: str, image_filename: str):
     """Background worker to index camera image - same pattern as process_video_loop"""
@@ -344,6 +642,7 @@ def process_camera_image(camera_name: str, image_filename: str):
         print(f"Error indexing image {image_filename} from camera {camera_name}: {e}")
         asyncio.run(broadcast_ws_message({"type": "error", "msg": f"Failed to index {image_filename}: {str(e)}"}))
 
+
 @app.post("/api/cameras/{camera_name}/image/{image_filename}/index")
 def index_camera_image(camera_name: str, image_filename: str):
     """Start background indexing of camera image (processes like video frames)"""
@@ -354,6 +653,7 @@ def index_camera_image(camera_name: str, image_filename: str):
     except Exception as e:
         print(f"Error starting index job: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/cameras")
 def get_cameras():
@@ -377,7 +677,6 @@ def get_cameras():
         pass
     return sorted(list(cams), key=str)
 
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
 @app.post("/api/stt")
 async def speech_to_text(file: UploadFile = File(...), lang: str = Form("en")):
@@ -414,6 +713,7 @@ async def speech_to_text(file: UploadFile = File(...), lang: str = Form("en")):
             print(f"STT Error: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/search")
 def search_endpoint(
     text_query: str = Form(""),
@@ -426,8 +726,20 @@ def search_endpoint(
     to_time: float = Form(None),
     files: List[UploadFile] = File([])
 ):
+    """
+    Multi-modal search endpoint using BoxMOT ReID models.
+    
+    Supports:
+    - Text queries (512-dim from BoxmotTextEncoder)
+    - Image queries (512-dim semantic from BoxmotReIDExtractor)
+    - Recursive queries (from previous results)
+    - Multi-query fusion (mean of embeddings)
+    
+    Uses upscaled embeddings if USE_UPSCALER is True.
+    """
     vectors = []
     
+    # Process text query
     if text_query:
         is_arabic = any('\u0600' <= c <= '\u06FF' for c in text_query)
         
@@ -436,7 +748,7 @@ def search_endpoint(
                 gemini_api_key = os.getenv("GEMINI_API_KEY")
                 if not gemini_api_key:
                     print("Warning: GEMINI_API_KEY not found in .env. Falling back to original query.")
-                    text_vector = model_clip.encode(text_query)
+                    text_vector = text_encoder.extract_text(text_query)
                 else:
                     client_openai = OpenAI(
                         api_key=gemini_api_key,
@@ -451,34 +763,56 @@ def search_endpoint(
                         ]
                     )
                     translated_query = response.choices[0].message.content.strip()
-                    text_vector = model_clip.encode(translated_query)
+                    text_vector = text_encoder.extract_text(translated_query)
             except Exception as e:
                 print(f"Translation error: {e}")
-                text_vector = model_clip.encode(text_query)
+                text_vector = text_encoder.extract_text(text_query)
         else:
-            text_vector = model_clip.encode(text_query)
+            # Use BoxmotTextEncoder for text
+            text_vector = text_encoder.extract_text(text_query)
             
         vectors.append(text_vector)
-        
+    
+    # Process recursive query
     if recursive_id:
-        res = client_qdrant.retrieve(collection_name=COLLECTION_NAME, ids=[recursive_id], with_vectors=True)
+        res = client_qdrant.retrieve(
+            collection_name=COLLECTION_NAME,
+            ids=[recursive_id],
+            with_vectors=True
+        )
         if res and res[0].vector:
             vectors.append(res[0].vector)
+    
+    # Process image queries
     elif files:
         for file in files:
             if file.filename:
                 img_bytes = file.file.read()
                 img = Image.open(BytesIO(img_bytes)).convert('RGB')
-                vectors.append(model_clip.encode(img))
-        
+            
+                # Use BoxmotReIDExtractor for images (512-dim semantic)
+                img_vector = reid_extractor.extract_from_pil(img)
+                
+                if img_vector is not None:
+                    vectors.append(img_vector)
+    
     if not vectors:
         raise HTTPException(status_code=400, detail="No valid query provided")
+    
+    # Apply Mean fusion for multiple queries (OPTIMAL TECHNIQUE)
+    vectors = [np.array(v) for v in vectors]  # ensure all vectors are numpy arrays first
+    
+    if len(vectors) > 1:        
+        # Mean fusion
+        query_vector = np.mean(vectors, axis=0)
         
-    if len(vectors) > 1:
-        query_vector = np.mean(vectors, axis=0).tolist()
+        # Re-normalize the fused vector
+        query_vector = query_vector / (np.linalg.norm(query_vector) + 1e-8)
+        query_vector = query_vector.tolist()
     else:
         query_vector = vectors[0] if isinstance(vectors[0], list) else vectors[0].tolist()
-        
+    
+    # Build filter conditions
     filter_conditions = []
     
     def parse_value(v):
@@ -501,12 +835,14 @@ def search_endpoint(
         if frame_list:
             filter_conditions.append(FieldCondition(key="Frame", match=MatchAny(any=frame_list)))
 
+
     if from_time is not None or to_time is not None:
         filter_conditions.append(FieldCondition(key="timestamp", range=Range(gte=from_time, lte=to_time)))
 
     query_filter = Filter(must=filter_conditions) if filter_conditions else None
     thresh = score_threshold if score_threshold > 0.0 else None
 
+    # Execute search
     try:
         search_response = client_qdrant.query_points(
             collection_name=COLLECTION_NAME,
@@ -529,6 +865,7 @@ def search_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/image/{image_id}")
 def get_image(image_id: str):
     obj_name = image_id
@@ -544,8 +881,9 @@ def get_image(image_id: str):
     except Exception as e:
         raise HTTPException(status_code=404, detail="Image not found")
 
+
 @app.delete("/api/session")
-def delete_session(image_ids: str = Form(...)): # comma separated
+def delete_session(image_ids: str = Form(...)):  # comma separated
     ids = [i.strip() for i in image_ids.split(",") if i.strip()]
     if not ids:
         return {"status": "ok", "deleted": 0}
@@ -561,9 +899,19 @@ def delete_session(image_ids: str = Form(...)): # comma separated
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ============================================================
+#  STATIC FILES
+# ============================================================
+
 # Ensure fallback for when frontend is not built
 if os.path.exists("frontend/dist"):
     app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
+
+
+# ============================================================
+#  MAIN
+# ============================================================
 
 if __name__ == "__main__":
     import uvicorn
