@@ -21,6 +21,7 @@ from PIL import Image
 import threading
 import json
 import asyncio
+from typing import List
 
 load_dotenv()
 
@@ -383,7 +384,7 @@ def search_endpoint(
     frames: str = Form(""),
     score_threshold: float = Form(0.0),
     limit: int = Form(20),
-    file: UploadFile = File(None)
+    files: List[UploadFile] = File([])
 ):
     vectors = []
     
@@ -423,10 +424,12 @@ def search_endpoint(
         res = client_qdrant.retrieve(collection_name=COLLECTION_NAME, ids=[recursive_id], with_vectors=True)
         if res and res[0].vector:
             vectors.append(res[0].vector)
-    elif file is not None:
-        img_bytes = file.file.read()
-        img = Image.open(BytesIO(img_bytes)).convert('RGB')
-        vectors.append(model_clip.encode(img))
+    elif files:
+        for file in files:
+            if file.filename:
+                img_bytes = file.file.read()
+                img = Image.open(BytesIO(img_bytes)).convert('RGB')
+                vectors.append(model_clip.encode(img))
         
     if not vectors:
         raise HTTPException(status_code=400, detail="No valid query provided")

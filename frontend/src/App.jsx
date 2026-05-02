@@ -219,7 +219,7 @@ function SearchTab({ t, onImageClick }) {
     const formData = new FormData();
     formData.append('text_query', textQuery);
     if (files.length > 0 && !recursiveId) {
-      formData.append('file', files[0]);
+      files.forEach(f => formData.append('files', f));
     }
     if (recursiveId) formData.append('recursive_id', recursiveId);
     formData.append('cameras', selectedCameras.join(','));
