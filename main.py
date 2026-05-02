@@ -48,9 +48,9 @@ BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME", "image-dataset")
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "images")
-REID_MODEL_PATH = os.getenv("REID_MODEL", "clip_market1501.pt")
-SR_MODEL_PATH = os.getenv("SR_MODEL", "RealESRGAN_x4plus.pth")
-YOLO_MODEL_PATH = os.getenv("YOLO_MODEL", "yolo_person_yv11_best.pt")
+REID_MODEL_PATH = os.getenv("REID_MODEL", "models/clip_market1501.pt")
+SR_MODEL_PATH = os.getenv("SR_MODEL", "models/RealESRGAN_x4plus.pth")
+YOLO_MODEL_PATH = os.getenv("YOLO_MODEL", "models/yolo_person_yv11_best.pt")
 CAMERAS_FOLDER = os.getenv("CAMERAS_FOLDER", "cameras")
 
 # Super-Resolution Configuration
