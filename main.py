@@ -837,7 +837,7 @@ def search_endpoint(
 
 
     if from_time is not None or to_time is not None:
-        filter_conditions.append(FieldCondition(key="timestamp", range=Range(gte=from_time, lte=to_time)))
+        filter_conditions.append(FieldCondition(key="Frame", range=Range(gte=from_time, lte=to_time)))
 
     query_filter = Filter(must=filter_conditions) if filter_conditions else None
     thresh = score_threshold if score_threshold > 0.0 else None

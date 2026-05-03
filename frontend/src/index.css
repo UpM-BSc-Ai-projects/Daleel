@@ -843,3 +843,30 @@ input[type=range]::-webkit-slider-track {
   background: #dc2626;
   transform: scale(1.1);
 }
+
+/* Dashboard Cards */
+.dash-card {
+  background: rgba(0,0,0,0.2);
+  padding: 1.5rem;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.status-indicator.online { color: #10b981; }
+.status-indicator.offline { color: #ef4444; }
+
+[data-theme="light"] .dash-card {
+  background: var(--surface-color); /* Beige in light mode */
+}
+[data-theme="light"] .status-indicator.online {
+  color: #047857; /* Darker green for better readability on beige */
+}
+[data-theme="light"] .dash-card .dash-card-btn {
+  background: var(--bg-color); /* white-ish */
+  border-color: var(--primary-color);
+  color: var(--text-main);
+}
+[data-theme="light"] .dash-card .dash-card-btn:hover {
+  background: var(--primary-alpha);
+}

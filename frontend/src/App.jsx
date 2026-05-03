@@ -608,9 +608,9 @@ function DashTab({ t }) {
 
       {stats ? (
         <div className="grid grid-2">
-          <div style={{background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: 12, display: 'flex', flexDirection: 'column'}}>
+          <div className="dash-card">
             <h3>{t.qdrant}</h3>
-            <p><b>{t.status}:</b> <span style={{color: stats.qdrant_status === 'Online' ? '#10b981' : '#ef4444'}}>● {t.online && stats.qdrant_status === 'Online' ? t.online : t.offline}</span></p>
+            <p><b>{t.status}:</b> <span className={`status-indicator ${stats.qdrant_status === 'Online' ? 'online' : 'offline'}`}>● {t.online && stats.qdrant_status === 'Online' ? t.online : t.offline}</span></p>
             <div className="stat-card">
               <div style={{color: 'var(--text-muted)', fontSize: '0.9rem'}}>{t.q_points}</div>
               <div className="stat-val">{(stats.qdrant_points || 0).toLocaleString()}</div>
@@ -619,13 +619,13 @@ function DashTab({ t }) {
               <div style={{color: 'var(--text-muted)', fontSize: '0.9rem'}}>{t.q_size}</div>
               <div className="stat-val">{formatMB(stats.qdrant_est_bytes)}</div>
             </div>
-            <button className="btn btn-secondary" style={{marginTop: 'auto'}} onClick={() => window.open('http://localhost:6333/dashboard', '_blank')}>
+            <button className="btn btn-secondary dash-card-btn" style={{marginTop: 'auto'}} onClick={() => window.open('http://localhost:6333/dashboard', '_blank')}>
               Open Qdrant UI
             </button>
           </div>
-          <div style={{background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: 12, display: 'flex', flexDirection: 'column'}}>
+          <div className="dash-card">
             <h3>{t.minio}</h3>
-            <p><b>{t.status}:</b> <span style={{color: stats.minio_status === 'Online' ? '#10b981' : '#ef4444'}}>● {t.online && stats.minio_status === 'Online' ? t.online : t.offline}</span></p>
+            <p><b>{t.status}:</b> <span className={`status-indicator ${stats.minio_status === 'Online' ? 'online' : 'offline'}`}>● {t.online && stats.minio_status === 'Online' ? t.online : t.offline}</span></p>
             <div className="stat-card">
               <div style={{color: 'var(--text-muted)', fontSize: '0.9rem'}}>{t.m_objs}</div>
               <div className="stat-val">{(stats.minio_objects || 0).toLocaleString()}</div>
@@ -634,7 +634,7 @@ function DashTab({ t }) {
               <div style={{color: 'var(--text-muted)', fontSize: '0.9rem'}}>{t.m_size}</div>
               <div className="stat-val">{formatMB(stats.minio_size_bytes)}</div>
             </div>
-            <button className="btn btn-secondary" style={{marginTop: 'auto'}} onClick={() => window.open('http://localhost:9001', '_blank')}>
+            <button className="btn btn-secondary dash-card-btn" style={{marginTop: 'auto'}} onClick={() => window.open('http://localhost:9001', '_blank')}>
               Open MinIO Console
             </button>
           </div>
