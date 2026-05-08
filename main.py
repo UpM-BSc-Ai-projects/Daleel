@@ -1,38 +1,48 @@
+import asyncio
+import json
 import os
-from dotenv import load_dotenv
+import threading
+import time
 import uuid
+from contextlib import asynccontextmanager
+from io import BytesIO
+from pathlib import Path
+from typing import List, Optional
+
+import cv2
+import httpx
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
-from io import BytesIO
-from minio import Minio
-from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchAny, PointStruct, Range
-import cv2
-import time
-from ultralytics import YOLO
-from openai import OpenAI
-from fastapi import FastAPI, HTTPException, WebSocket, File, Form, UploadFile, BackgroundTasks
+
+from dotenv import load_dotenv
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+)
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
+from minio import Minio
+from openai import OpenAI
 from PIL import Image
-import threading
-import json
-import asyncio
-from typing import List
-from pathlib import Path
-import httpx
-
-# BoxMOT imports
-from boxmot.reid.core import ReID
-from boxmot.reid.backbones.clip.make_model_clipreid import load_clip_to_cpu, TextEncoder
-from boxmot.reid.backbones.clip.clip import clip
+from qdrant_client import QdrantClient
+from qdrant_client.models import FieldCondition, Filter, MatchAny, PointStruct, Range
+from ultralytics import YOLO
 
 # RealESRGAN imports
-from basicsr.archs.rrdbnet_arch import RRDBNet
 from realesrgan import RealESRGANer
+from basicsr.archs.rrdbnet_arch import RRDBNet
+
+# BoxMOT imports
+from boxmot.reid.backbones.clip.clip import clip
+from boxmot.reid.backbones.clip.make_model_clipreid import TextEncoder, load_clip_to_cpu
+from boxmot.reid.core import ReID
 
 load_dotenv()
 
@@ -63,6 +73,7 @@ text_encoder = None
 reid_extractor = None
 upscaler = None
 model_yolo = None
+main_loop = None
 
 # Global state for capturing video
 capture_active = False
@@ -165,7 +176,7 @@ class BoxmotReIDExtractor:
         Extract embeddings from BGR image.
         
         Returns:
-            (full_emb_1280, proj_emb_512) or (None, None)
+            (proj_emb_512) or (None)
         """
         h, w = image.shape[:2]
         dets = np.array([[0, 0, w, h]], dtype=np.float32)
@@ -179,7 +190,7 @@ class BoxmotReIDExtractor:
         raw = self.backend.inference_postprocess(raw)
         
         if raw is None or (isinstance(raw, np.ndarray) and raw.size == 0):
-            return None, None
+            return None
         
         raw = raw[0]  # shape: (1280,)
         feat_512 = raw[768:]
@@ -194,7 +205,7 @@ class BoxmotReIDExtractor:
         Extract embeddings from PIL Image.
         
         Returns:
-            (full_emb_1280, proj_emb_512) or (None, None)
+            (proj_emb_512) or (None)
         """
         # Convert PIL to BGR numpy array
         img_rgb = np.array(pil_image.convert('RGB'))
@@ -285,7 +296,7 @@ class RealESRGANUpscaler:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global client_minio, client_qdrant, text_encoder, reid_extractor, upscaler, model_yolo
+    global client_minio, client_qdrant, text_encoder, reid_extractor, upscaler, model_yolo, main_loop
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
@@ -308,6 +319,9 @@ async def lifespan(app: FastAPI):
         else:
             print(f"WARNING: SR model not found at {SR_MODEL_PATH}. Upscaling disabled.")
             upscaler = None
+    
+    # Tracks the main event loop
+    main_loop = asyncio.get_event_loop()  
     
     print("Loading MinIO client...")
     client_minio = Minio(
@@ -360,14 +374,16 @@ async def broadcast_ws_message(msg: dict):
 
 
 def process_video_loop(video_path: str, interval: float, yolo_conf: float):
-    global capture_active
+    global capture_active, main_loop
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        asyncio.run(broadcast_ws_message({"type": "error", "msg": f"Could not open video file."}))
+        # asyncio.run(broadcast_ws_message({"type": "error", "msg": f"Could not open video file."}))
+        asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "error", "msg": f"Could not open video file."}), main_loop).result()
         capture_active = False
         return
         
-    asyncio.run(broadcast_ws_message({"type": "info", "msg": "System active. Monitoring for persons..."}))
+    # asyncio.run(broadcast_ws_message({"type": "info", "msg": "System active. Monitoring for persons..."}))
+    asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "info", "msg": "System active. Monitoring for persons..."}), main_loop).result()
     
     last_processed_msec = - (interval * 1000)
     
@@ -377,14 +393,14 @@ def process_video_loop(video_path: str, interval: float, yolo_conf: float):
         
         ret, frame = cap.read()
         if not ret:
-            asyncio.run(broadcast_ws_message({"type": "warn", "msg": "Reached end of video file."}))
+            asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "warn", "msg": "Reached end of video file."}), main_loop).result()
             break
             
         current_msec = cap.get(cv2.CAP_PROP_POS_MSEC)
         current_sec = int(current_msec / 1000)
         last_processed_msec = current_msec
         
-        asyncio.run(broadcast_ws_message({"type": "info", "msg": f"**Processing Video Time:** {current_sec}s"}))
+        asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "info", "msg": f"**Processing Video Time:** {current_sec}s"}), main_loop).result()
         
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil_frame = Image.fromarray(frame_rgb)
@@ -396,7 +412,7 @@ def process_video_loop(video_path: str, interval: float, yolo_conf: float):
                 boxes = result.boxes
                 if len(boxes) > 0:
                     found_people = True
-                    asyncio.run(broadcast_ws_message({"type": "success", "msg": f"[{current_sec}s] Detected {len(boxes)} person(s)!"}))
+                    asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "success", "msg": f"[{current_sec}s] Detected {len(boxes)} person(s)!"}), main_loop).result()
                     
                     for i, box in enumerate(boxes):
                         x1, y1, x2, y2 = box.xyxy[0].tolist()
@@ -442,10 +458,10 @@ def process_video_loop(video_path: str, interval: float, yolo_conf: float):
                             )]
                         )
                         
-                        asyncio.run(broadcast_ws_message({"type": "crop", "id": image_id, "sec": current_sec, "person": i+1}))
+                        asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "crop", "id": image_id, "sec": current_sec, "person": i+1}), main_loop).result()
             
             if not found_people:
-                asyncio.run(broadcast_ws_message({"type": "info", "msg": f"[{current_sec}s] Scanning... No one found."}))
+                asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "info", "msg": f"[{current_sec}s] Scanning... No one found."}), main_loop).result()
                 
         time.sleep(0.1)
         
@@ -509,7 +525,7 @@ def get_stats():
         col = client_qdrant.get_collection(COLLECTION_NAME)
         stats['qdrant_points'] = col.points_count
         stats['qdrant_status'] = 'Online'
-        stats['qdrant_est_bytes'] = col.points_count * 512 * 4
+        stats['qdrant_est_bytes'] = (col.points_count or 0) * 512 * 4
     except Exception:
         pass
 
@@ -595,23 +611,28 @@ def get_camera_image(camera_name: str, image_filename: str):
 
 def process_camera_image(camera_name: str, image_filename: str):
     """Background worker to index camera image - same pattern as process_video_loop"""
+    global reid_extractor, main_loop
     image_path = os.path.join(CAMERAS_FOLDER, camera_name, image_filename)
     
     real_path = os.path.realpath(image_path)
     real_camera_path = os.path.realpath(os.path.join(CAMERAS_FOLDER, camera_name))
     if not real_path.startswith(real_camera_path):
-        asyncio.run(broadcast_ws_message({"type": "error", "msg": f"Access denied: {image_filename}"}))
+        asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "error", "msg": f"Access denied: {image_filename}"}), main_loop).result()
         return
     
     if not os.path.exists(image_path):
-        asyncio.run(broadcast_ws_message({"type": "error", "msg": f"Image not found: {image_filename}"}))
+        asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "error", "msg": f"Image not found: {image_filename}"}), main_loop).result()
         return
     
     try:
-        asyncio.run(broadcast_ws_message({"type": "info", "msg": f"Indexing {image_filename} from {camera_name}..."}))
+        asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "info", "msg": f"Indexing {image_filename} from {camera_name}..."}), main_loop).result()
         
         img = Image.open(image_path).convert('RGB')
-        vector = model_clip.encode(img).tolist()
+        vector = reid_extractor.extract_from_pil(img)
+        
+        if not vector:
+            asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "error", "msg": f"Failed to extract features from {image_filename}"}), main_loop).result()
+            return
         
         image_id = str(uuid.uuid4())
         
@@ -637,10 +658,10 @@ def process_camera_image(camera_name: str, image_filename: str):
             )]
         )
         
-        asyncio.run(broadcast_ws_message({"type": "success", "msg": f"Indexed {image_filename} from {camera_name}"}))
+        asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "success", "msg": f"Indexed {image_filename} from {camera_name}"}), main_loop).result()
     except Exception as e:
         print(f"Error indexing image {image_filename} from camera {camera_name}: {e}")
-        asyncio.run(broadcast_ws_message({"type": "error", "msg": f"Failed to index {image_filename}: {str(e)}"}))
+        asyncio.run_coroutine_threadsafe(broadcast_ws_message({"type": "error", "msg": f"Failed to index {image_filename}: {str(e)}"}), main_loop).result()
 
 
 @app.post("/api/cameras/{camera_name}/image/{image_filename}/index")
@@ -722,8 +743,8 @@ def search_endpoint(
     frames: str = Form(""),
     score_threshold: float = Form(0.0),
     limit: int = Form(20),
-    from_time: float = Form(None),
-    to_time: float = Form(None),
+    from_time: Optional[float] = Form(None),  
+    to_time: Optional[float] = Form(None),
     files: List[UploadFile] = File([])
 ):
     """
@@ -826,7 +847,7 @@ def search_endpoint(
                 return v
 
     if cameras:
-        cam_list = [parse_value(c) for c in cameras.split(",") if c.strip()]
+        cam_list = [c.strip() for c in cameras.split(",") if c.strip()]
         if cam_list:
             filter_conditions.append(FieldCondition(key="Cam", match=MatchAny(any=cam_list)))
             
@@ -837,7 +858,7 @@ def search_endpoint(
 
 
     if from_time is not None or to_time is not None:
-        filter_conditions.append(FieldCondition(key="Frame", range=Range(gte=from_time, lte=to_time)))
+        filter_conditions.append(FieldCondition(key="timestamp", range=Range(gte=from_time, lte=to_time)))
 
     query_filter = Filter(must=filter_conditions) if filter_conditions else None
     thresh = score_threshold if score_threshold > 0.0 else None
