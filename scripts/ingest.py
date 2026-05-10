@@ -44,7 +44,7 @@ SR_MODEL_PATH = os.getenv("SR_MODEL", "models/RealESRGAN_x4plus.pth")
 # Super-Resolution Configuration
 USE_UPSCALER = True  # Set to False to disable upscaling
 
-BATCH_SIZE = 500
+BATCH_SIZE = 700
 
 
 # ============================================================
@@ -261,7 +261,7 @@ def ingest_dataset():
     
     # Collect all image paths
     image_paths = []
-    target_vids = {'Vid_11','Vid_12','Vid_13','Vid_14'}
+    target_vids = {'Vid_1','Vid_2','Vid_3','Vid_4','Vid_5','Vid_6','Vid_7','Vid_8','Vid_9','Vid_10','Vid_11','Vid_12','Vid_13','Vid_14'}
     
     for root, _, files in os.walk(DATASET_DIR):
         # We only want to process images if they are inside one of our target video directories
