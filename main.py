@@ -848,17 +848,53 @@ def search_endpoint(
 
     if cameras:
         cam_list = [c.strip() for c in cameras.split(",") if c.strip()]
-        if cam_list:
-            filter_conditions.append(FieldCondition(key="Cam", match=MatchAny(any=cam_list)))
+        str_cams = [c for c in cam_list if not c.isdigit()]
+        int_cams = [int(c) for c in cam_list if c.isdigit()]
+        
+        cam_conditions = []
+        if str_cams:
+            cam_conditions.append(FieldCondition(key="Cam", match=MatchAny(any=str_cams)))
+        if int_cams:
+            cam_conditions.append(FieldCondition(key="Cam", match=MatchAny(any=int_cams)))
+            
+        if len(cam_conditions) == 1:
+            filter_conditions.append(cam_conditions[0])
+        elif len(cam_conditions) > 1:
+            filter_conditions.append(Filter(should=cam_conditions))
             
     if frames:
-        frame_list = [parse_value(c) for c in frames.split(",") if c.strip()]
-        if frame_list:
-            filter_conditions.append(FieldCondition(key="Frame", match=MatchAny(any=frame_list)))
+        frame_list = [f.strip() for f in frames.split(",") if f.strip()]
+        str_frames = []
+        int_frames = []
+        float_frames = []
+        for f in frame_list:
+            if f.isdigit():
+                int_frames.append(int(f))
+            else:
+                try:
+                    float_frames.append(float(f))
+                except ValueError:
+                    str_frames.append(f)
+                    
+        frame_conditions = []
+        if str_frames:
+            frame_conditions.append(FieldCondition(key="Frame", match=MatchAny(any=str_frames)))
+        if int_frames:
+            frame_conditions.append(FieldCondition(key="Frame", match=MatchAny(any=int_frames)))
+        if float_frames:
+            frame_conditions.append(FieldCondition(key="Frame", match=MatchAny(any=float_frames)))
+            
+        if len(frame_conditions) == 1:
+            filter_conditions.append(frame_conditions[0])
+        elif len(frame_conditions) > 1:
+            filter_conditions.append(Filter(should=frame_conditions))
 
 
     if from_time is not None or to_time is not None:
-        filter_conditions.append(FieldCondition(key="timestamp", range=Range(gte=from_time, lte=to_time)))
+        filter_conditions.append(Filter(should=[
+            FieldCondition(key="Frame", range=Range(gte=from_time, lte=to_time)),
+            FieldCondition(key="timestamp", range=Range(gte=from_time, lte=to_time))
+        ]))
 
     query_filter = Filter(must=filter_conditions) if filter_conditions else None
     thresh = score_threshold if score_threshold > 0.0 else None
